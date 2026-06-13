@@ -284,14 +284,14 @@ function newCard(key,data){
   return `<div class="card"><h3>${m.label} <span class="svc">— ${m.svc}</span></h3><table>${rows}</table></div>`;
 }
 const tabsEl=document.getElementById("tabs"), subTabsEl=document.getElementById("subtabs"), panesEl=document.getElementById("panes");
-const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
+const RIGHT=["connections","alloc","cand","stephist","translog"];
 
 // ---- Approach pane ----
 (function(){
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_approach";
   pane.innerHTML=`
   <div class="banner" style="border-left-color:#5b2d91"><b>CSP Installation Migration — How this works</b><div class="rule">Same method as the ISP-Recharge migration template, applied to the Installation workflow. A live install in the old DynamoDB world (a TASKS task-tree + a BOOKING row) is re-projected into the new CSP-OS tables across 5 services. Every NEW column carries a provenance chip back to an OLD source, a resolver, or a PM rule.</div></div>
-  <div class="hilite"><b>SCOPE — only in-flight installs are migrated.</b> We migrate <b>only installs that are in between</b> — accepted by a CSP and underway, but not yet finished (install candidate <code>task_status = OPEN</code>, connection <code>PENDING_INSTALL</code>). <b>NOT migrated:</b> installed/active (terminal success), declined/failed, cancelled (by customer or upstream), and expired. Already-active connections are owned by the connection/recharge backbone, not this workflow; the failed/cancelled tail is dropped. customer_access_states is never migrated (auto-created at activation). <b>Single CSP only:</b> the new world's D&A assigns each booking directly to one CSP, so only that assigned CSP's record migrates — old-world <code>LATE_INTERESTED</code> also-ran rows (the losers of the first-come-first-served race) are excluded entirely.</div>
+  <div class="hilite"><b>SCOPE — only in-flight installs are migrated.</b> We migrate <b>only installs that are in between</b> — accepted by a CSP and underway, but not yet finished (install candidate <code>task_status = OPEN</code>, connection <code>PENDING_INSTALL</code>). <b>NOT migrated:</b> installed/active (terminal success), declined/failed, cancelled (by customer or upstream), and expired. Already-active connections are owned by the connection/recharge backbone, not this workflow; the failed/cancelled tail is dropped. <b>customer_access_states</b> (CAEOS) and <b>netbox_custody</b> (ACS) are never written in-flight — both are set at activation (the device is CUSTODIED with the CSP until then, DEPLOYED only at CONNECTION_ACTIVE). <b>Single CSP only:</b> the new world's D&A assigns each booking directly to one CSP, so only that assigned CSP's record migrates — old-world <code>LATE_INTERESTED</code> also-ran rows (the losers of the first-come-first-served race) are excluded entirely.</div>
   <div class="flow3">
     <div class="step now"><div class="n">1</div><div class="t">PRODUCT</div><div class="d">Defines logic per entity.<br>Every NEW column &larr; OLD source (TASKS / BOOKING).<br>Derivations = PM-defined, never inferred.</div><div class="tag">CURRENT PHASE</div></div>
     <div class="arr">&rarr;</div>
@@ -312,7 +312,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
     <div class="m"><b>connection_allocations</b><span>D&amp;A — allocation state (ASSIGNED→ACCEPTED→ACTIVE).</span></div>
     <div class="m"><b>install_execution_candidates</b><span>TAS — the 20-state install machine.</span></div>
     <div class="m"><b>installation_step_history</b><span>TAS — per-step audit (backfill from child step-tasks).</span></div>
-    <div class="m"><b>netbox_custody</b><span>ACS — device custody (DEPLOYED on bind).</span></div>
+    <div class="m"><b>netbox_custody</b><span style="color:#b25b00">ACS — NOT migrated in-flight; CUSTODIED during install, DEPLOYED only at activation.</span></div>
     <div class="m"><b>customer_access_states</b><span style="color:#b25b00">CAEOS — NOT migrated; auto-created at activation.</span></div>
   </div>
   <div class="side-title" style="margin-top:18px">HOW TO READ A CASE TAB</div>
@@ -363,7 +363,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
    <div class="banner"><b>Case menu — 11 in-flight archetypes (the full migration scope)</b><div class="rule">These 11 are the only installs we migrate — each in-flight install collapses into one of these by where it sits in the 20-state machine (read off TASKS columns). Case 9 (⭐) is fully column-mapped in the <b>Worked example</b> tab. allocation = the live OPEN value (ACCEPTED through the whole install; ACTIVE only at completion).</div></div>
    <table class="menu"><thead><tr><th>#</th><th>Case</th><th>Old TASKS signature</th><th>install_execution_candidate state</th><th>connection</th><th>allocation</th></tr></thead>
    <tbody>${MENU.map(m=>`<tr class="live"><td><b>${m[0]}</b></td><td>${m[1]}</td><td><code>${m[2]}</code></td><td><b>${m[3]}</b></td><td>${m[4]}</td><td>${m[5]}</td></tr>`).join("")}</tbody></table>
-   <div class="warn" style="margin-top:14px"><b>Out of scope (NOT migrated):</b> installed/active (owned by the connection/recharge backbone), declined/failed, cancelled (customer or upstream), and expired — these terminal states are dropped, not re-projected. customer_access_states is never migrated (auto-created at activation).</div>`;
+   <div class="warn" style="margin-top:14px"><b>Out of scope (NOT migrated):</b> installed/active (owned by the connection/recharge backbone), declined/failed, cancelled (customer or upstream), and expired — these terminal states are dropped, not re-projected. customer_access_states (CAEOS) and netbox_custody (ACS) are never written in-flight — set at activation (device is CUSTODIED until DEPLOYED at CONNECTION_ACTIVE).</div>`;
   panesEl.appendChild(pane);
 })();
 
@@ -371,25 +371,30 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
 // ---- Old → New State Map pane (primary view: drive from old states) ----
 (function(){
   const MAP=[
-   ["Created / ADDRESS_VERIFIED / BOOKING_FEE_PAID","BOOKING_STATE early; no CSP acceptance","— (no candidate)","REQUESTED","1"],
-   ["PARTNER_MARK_INTEREST (assigned CSP, NOTIF_SENT)","CSP assigned, no slot proposed","AWAITING_SLOT_PROPOSAL","PENDING_INSTALL","2"],
-   ["Slot proposed (CUSTOMER_AWAITING)","PARTNER_SLOT_PROPOSED_AT set, not confirmed","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","3"],
-   ["SLOT_CONFIRMED_BY_CUSTOMER","CUSTOMER_CONFIRMED_TIME set, no rohit","SLOT_CONFIRMED_BY_CUSTOMER → AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","4–5"],
-   ["ROHIT_ASSIGNED","ASSIGNEE set, COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","6"],
-   ["ROHIT_ARRIVED · COMPLETED_STEP=1 (SELFIE)","on-site, pre-fee","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","7"],
-   ["ROHIT_ARRIVED · fee NOT paid (SD_TXN_ID null)","on-site fee step (≈ AADHAR done)","FEE_COLLECTION_PENDING","PENDING_INSTALL","8"],
-   ["ROHIT_ARRIVED · fee PAID · COMPLETED_STEP 3–5","SD_TXN_ID set; SHARED/CONNECTION_INFO/DEVICE_PHOTO","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","9"],
-   ["ROHIT_ARRIVED · COMPLETED_STEP=6 (SPEED_TEST)","speed test done","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","10"],
-   ["ROHIT_ARRIVED · COMPLETED_STEP=7 (OTP)","otp verified","RATING_PENDING","PENDING_INSTALL","11"],
-   ["Installed · STATUS=2, COMPLETED_STEP=8 (RATING)","terminal success","CONNECTION_ACTIVE","ACTIVE","out"],
-   ["ALL_PARTNER_DECLINES / STATUS=-1","declined / cancelled","INSTALLATION_REPORTED_FAILED / CANCELLED_*","PENDING_DEACTIVATION","out"]
+   ["ADDRESS_VERIFIED / BOOKING_FEE_PAID","pre-acceptance, no INSTALLATION task","— (no candidate)","REQUESTED","—","1"],
+   ["Partner notified (NOTIF_SENT), not accepted","single assigned CSP, not accepted","— (no candidate)","REQUESTED","—","1"],
+   ["PARTNER_MARK_INTEREST (accepted), no slot","accepted; no PARTNER_SLOT_PROPOSED_AT","AWAITING_SLOT_PROPOSAL","PENDING_INSTALL","NOT_APPLICABLE","2"],
+   ["Slot proposed (CUSTOMER_AWAITING)","PARTNER_SLOT_PROPOSED_AT set, not confirmed","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","NOT_APPLICABLE","3"],
+   ["SLOT_CONFIRMED_BY_CUSTOMER","CUSTOMER_CONFIRMED_TIME set, no rohit","SLOT_CONFIRMED_BY_CUSTOMER → AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","NOT_APPLICABLE","4–5"],
+   ["ROHIT_ASSIGNED","ASSIGNEE set, COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","NOT_APPLICABLE","6"],
+   ["ROHIT_ARRIVED · step 0 (arrived)","on-site, no step done","ARRIVED_AT_SITE","PENDING_INSTALL","NOT_APPLICABLE","—"],
+   ["ROHIT_ARRIVED · SELFIE (step 1)","COMPLETED_STEP=1","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","NOT_APPLICABLE","7"],
+   ["ROHIT_ARRIVED · AADHAR (step 2), SD null","fee not paid (SD_TXN_ID null)","FEE_COLLECTION_PENDING","PENDING_INSTALL","PENDING","8"],
+   ["ROHIT_ARRIVED · security deposit paid (SD_TXN_ID set)","fee event — SHARED gate clears","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
+   ["ROHIT_ARRIVED · SHARED (step 3)","SD set; agreement","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
+   ["ROHIT_ARRIVED · CONNECTION_INFO (step 4)","SD set; device + optical captured","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
+   ["ROHIT_ARRIVED · DEVICE_PHOTO (step 5)","SD set; router photo","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
+   ["ROHIT_ARRIVED · SPEED_TEST (step 6)","COMPLETED_STEP=6","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","PAID","10"],
+   ["ROHIT_ARRIVED · OTP verified (step 7)","COMPLETED_STEP=7","RATING_PENDING","PENDING_INSTALL","PAID","11"],
+   ["RATING (step 8) / STATUS=2 — installed","install complete","CONNECTION_ACTIVE","ACTIVE","PAID","out"],
+   ["ALL_PARTNER_DECLINES / STATUS=-1","declined / cancelled","INSTALLATION_REPORTED_FAILED / CANCELLED_*","PENDING_DEACTIVATION","—","out"]
   ];
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_oldnew";
   pane.innerHTML=`
-   <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states</b><div class="rule">The migration is driven <b>from the old world</b>: every old install state — <code>BOOKING_STATE</code> + <code>INSTALLATION.COMPLETED_STEP</code> + <code>SD_TXN_ID</code> — maps to exactly one new install-candidate state. The ₹300 security deposit is collected <b>on-site</b> (<code>SD_TXN_ID</code> is 0% set until ROHIT_ARRIVED, then 94%), so <b>FEE_COLLECTION_PENDING is a real state</b> (Case 8). <b style="color:#0a7a3d">Green = in scope</b> · <b style="color:#b25b00">amber = terminal (out of scope)</b>.</div></div>
-   <table class="menu"><thead><tr><th>OLD-world state</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>Case</th></tr></thead>
-   <tbody>${MAP.map(m=>`<tr class="${m[4]==='out'?'term':'live'}"><td><b>${m[0]}</b></td><td><code>${m[1]}</code></td><td><b>${m[2]}</b></td><td>${m[3]}</td><td>${m[4]==='out'?'—':m[4]}</td></tr>`).join("")}</tbody></table>
-   <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate.</b> A candidate is POST_FEE / OTP / RATING <b>only if SD_TXN_ID is set</b>; if it is null while on-site the state is <b>FEE_COLLECTION_PENDING regardless of COMPLETED_STEP</b>. On-site derivation precedence: <code>COMPLETED_STEP≤1 → ARRIVED/PRE_FEE (fee not due) · else SD_TXN_ID null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. And <code>security_fee_status = SD_TXN_ID ? PAID : (on-site &amp; step≥2 ? PENDING : NOT_APPLICABLE)</code> — deposit collected on-site, not at booking. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID (join BOOKING.TASK_ID); only the single D&amp;A-assigned CSP migrates (LATE_INTERESTED dropped).</div>`;
+   <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states (full)</b><div class="rule">Driven <b>from the old world</b>: every old install state — <code>BOOKING_STATE</code> (coarse phase) + <code>INSTALLATION.COMPLETED_STEP</code> (on-site granularity) + <code>SD_TXN_ID</code> (fee) — maps to exactly one new candidate state. <code>ROHIT_ARRIVED</code> is the umbrella for the whole on-site phase (steps 0–8, verified: 7,434 current rows); the step number resolves the sub-state. The ₹300 deposit is collected <b>on-site</b> (SD_TXN_ID 0% set until ROHIT_ARRIVED, then 94%), so <b>FEE_COLLECTION_PENDING is real</b> (Case 8). <b style="color:#0a7a3d">Green = in scope</b> · <b style="color:#b25b00">amber = terminal (out)</b>.</div></div>
+   <table class="menu"><thead><tr><th>OLD-world state (BOOKING_STATE / step / SD)</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>security_fee</th><th>Case</th></tr></thead>
+   <tbody>${MAP.map(m=>`<tr class="${m[5]==='out'?'term':'live'}"><td><b>${m[0]}</b></td><td><code>${m[1]}</code></td><td><b>${m[2]}</b></td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]==='out'?'—':m[5]}</td></tr>`).join("")}</tbody></table>
+   <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate</b> — POST_FEE/OTP/RATING require it set; null on-site → FEE_COLLECTION_PENDING regardless of step. On-site precedence: <code>step≤1 → ARRIVED/PRE_FEE · else SD null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. <b>Custody:</b> the device is <code>CUSTODIED</code> with the CSP throughout the install; it becomes <code>DEPLOYED</code> only at <code>CONNECTION_ACTIVE</code> (CustomerInstallationSignal) — so the in-flight migration does <b>not</b> write netbox_custody. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID; single D&amp;A-assigned CSP only (LATE_INTERESTED dropped); plan_id = 22 (const).</div>`;
   panesEl.appendChild(pane);
 })();
 // ---- exhaustive full-schema row builders: fill every column from per-case params ----
