@@ -205,14 +205,13 @@ const CASES = [
  p:{connState:"PENDING_INSTALL", customerId:"281749855087404", customerName:"irfan saifi", partnerId:"281749854698043", assignee:"281612415747766", lat:"28.7289", lng:"77.2167", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_PRE_FEE", candNote:"COMPLETED_STEP=1 (SELFIE done)", completedStep:"1", completedStepN:1, calls:"≥1", feeStatus:"PAID", feeTxn:"custGen_8287275243_203479408_0", slotDate:"2026-06-12", steps:["SELFIE"], hasCustody:false}
 },
 {
- id:"c8", title:"Case 8 · Fee collection pending (N/A for migration)", key:"COMPLETED_STEP=2 — transient",
- warn:"Old world has NO fee-gate pause — the ₹300 security deposit is collected at BOOKING (SD_TXN_ID), not at an install step. A migrated install at COMPLETED_STEP=2 already has the fee PAID, so it advances straight past FEE_COLLECTION_PENDING to POST_FEE. No current real example exists (step 2 is momentary).",
- rule:"In the new flow FEE_COLLECTION_PENDING sits between AADHAR(2) and SHARED(3). For migrated installs the fee is pre-paid, so this is not a resting state.",
+ id:"c8", title:"Case 8 · On-site, fee collection pending", key:"INSTALLATION 1781181826544679 · customer 281749855087241 (Aashish Sharma)",
+ rule:"Technician on-site (ROHIT_ARRIVED), COMPLETED_STEP=2 (AADHAR done), but the ₹300 security deposit is NOT yet collected (SD_TXN_ID null) → FEE_COLLECTION_PENDING. The deposit is collected ON-SITE here, between AADHAR and SHARED (SHARED is gated on payment). Verified: SD_TXN_ID is 0% populated until ROHIT_ARRIVED, then 94% — i.e. collected on-site, not at booking.",
  old:[
-  {t:"TASKS · INSTALLATION", rows:[["COMPLETED_STEP","2 (AADHAR done)"],["note","no current STATUS=1 example — transient"]]},
-  {t:"BOOKING", rows:[["SD_TXN_ID","present → fee already PAID"],["SD_AMOUNT","300"]]}
+  {t:"TASKS · INSTALLATION (1781181826544679)", rows:[["STATUS","1"],["COMPLETED_STEP","2 (AADHAR done)"],["ASSIGNEE","281612415917882 (pradum)"],["SLOT_TIME","2026-06-12"],["PARTNER_ID","281749854781744"]]},
+  {t:"BOOKING (TASK_ID 1781181826544679)", rows:[["ACCOUNT_ID","281749855087241  →  customer_id"],["NAME","Aashish Sharma"],["BOOKING_STATE","ROHIT_ARRIVED (on-site)"],["SD_TXN_ID","NULL  ⚠ deposit not yet paid → FEE_COLLECTION_PENDING"],["SD_AMOUNT","300"],["LAT / LNG","19.0439 / 73.0193"]]}
  ],
- p:{connState:"PENDING_INSTALL", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_POST_FEE", candNote:"fee pre-paid → skips FEE_COLLECTION_PENDING", completedStep:"2", completedStepN:2, feeStatus:"PAID", steps:["SELFIE","AADHAR"], hasCustody:false}
+ p:{connState:"PENDING_INSTALL", customerId:"281749855087241", customerName:"Aashish Sharma", partnerId:"281749854781744", assignee:"281612415917882", lat:"19.0439", lng:"73.0193", allocState:"ACCEPTED", candState:"FEE_COLLECTION_PENDING", candNote:"on-site; ₹300 deposit not yet paid (SD_TXN_ID null)", completedStep:"2", completedStepN:2, feeStatus:"PENDING", slotDate:"2026-06-12", steps:["SELFIE","AADHAR"], hasCustody:false}
 },
 {
  id:"sumit", title:"Case 9 · On-site, post-fee — ⭐ fully mapped (sumit)", key:"TASK_ID 1781335322392052 · customer 281749855088053",
@@ -354,7 +353,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
    ["5","Awaiting technician","slot confirmed; no ASSIGNEE","AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","ACCEPTED","live"],
    ["6","Technician assigned","ASSIGNEE + ASSIGNED_TIME; COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","ACCEPTED","live"],
    ["7","On-site, pre-fee","COMPLETED_STEP=1 (SELFIE)","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","ACCEPTED","live"],
-   ["8","Fee collection pending","COMPLETED_STEP=2 (AADHAR)","FEE_COLLECTION_PENDING","PENDING_INSTALL","ACCEPTED","live"],
+   ["8","On-site, fee pending","ROHIT_ARRIVED, SD_TXN_ID null (deposit not paid)","FEE_COLLECTION_PENDING","PENDING_INSTALL","ACCEPTED","live"],
    ["9","On-site, post-fee ⭐","COMPLETED_STEP=3/4/5 (SHARED/CONNECTION_INFO/DEVICE_PHOTO)","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","ACCEPTED","live"],
    ["10","Awaiting OTP","COMPLETED_STEP=6 (SPEED_TEST done)","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","ACCEPTED","live"],
    ["11","Rating pending","COMPLETED_STEP=7 (OTP done)","RATING_PENDING","PENDING_INSTALL","ACCEPTED","live"]
@@ -369,6 +368,30 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
 })();
 
 // ---- Worked-example workflow (cases) ----
+// ---- Old → New State Map pane (primary view: drive from old states) ----
+(function(){
+  const MAP=[
+   ["Created / ADDRESS_VERIFIED / BOOKING_FEE_PAID","BOOKING_STATE early; no CSP acceptance","— (no candidate)","REQUESTED","1"],
+   ["PARTNER_MARK_INTEREST (assigned CSP, NOTIF_SENT)","CSP assigned, no slot proposed","AWAITING_SLOT_PROPOSAL","PENDING_INSTALL","2"],
+   ["Slot proposed (CUSTOMER_AWAITING)","PARTNER_SLOT_PROPOSED_AT set, not confirmed","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","3"],
+   ["SLOT_CONFIRMED_BY_CUSTOMER","CUSTOMER_CONFIRMED_TIME set, no rohit","SLOT_CONFIRMED_BY_CUSTOMER → AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","4–5"],
+   ["ROHIT_ASSIGNED","ASSIGNEE set, COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","6"],
+   ["ROHIT_ARRIVED · COMPLETED_STEP=1 (SELFIE)","on-site, pre-fee","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","7"],
+   ["ROHIT_ARRIVED · fee NOT paid (SD_TXN_ID null)","on-site fee step (≈ AADHAR done)","FEE_COLLECTION_PENDING","PENDING_INSTALL","8"],
+   ["ROHIT_ARRIVED · fee PAID · COMPLETED_STEP 3–5","SD_TXN_ID set; SHARED/CONNECTION_INFO/DEVICE_PHOTO","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","9"],
+   ["ROHIT_ARRIVED · COMPLETED_STEP=6 (SPEED_TEST)","speed test done","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","10"],
+   ["ROHIT_ARRIVED · COMPLETED_STEP=7 (OTP)","otp verified","RATING_PENDING","PENDING_INSTALL","11"],
+   ["Installed · STATUS=2, COMPLETED_STEP=8 (RATING)","terminal success","CONNECTION_ACTIVE","ACTIVE","out"],
+   ["ALL_PARTNER_DECLINES / STATUS=-1","declined / cancelled","INSTALLATION_REPORTED_FAILED / CANCELLED_*","PENDING_DEACTIVATION","out"]
+  ];
+  const pane=document.createElement("div");pane.className="casepane";pane.id="pane_oldnew";
+  pane.innerHTML=`
+   <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states</b><div class="rule">The migration is driven <b>from the old world</b>: every old install state — <code>BOOKING_STATE</code> + <code>INSTALLATION.COMPLETED_STEP</code> + <code>SD_TXN_ID</code> — maps to exactly one new install-candidate state. The ₹300 security deposit is collected <b>on-site</b> (<code>SD_TXN_ID</code> is 0% set until ROHIT_ARRIVED, then 94%), so <b>FEE_COLLECTION_PENDING is a real state</b> (Case 8). <b style="color:#0a7a3d">Green = in scope</b> · <b style="color:#b25b00">amber = terminal (out of scope)</b>.</div></div>
+   <table class="menu"><thead><tr><th>OLD-world state</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>Case</th></tr></thead>
+   <tbody>${MAP.map(m=>`<tr class="${m[4]==='out'?'term':'live'}"><td><b>${m[0]}</b></td><td><code>${m[1]}</code></td><td><b>${m[2]}</b></td><td>${m[3]}</td><td>${m[4]==='out'?'—':m[4]}</td></tr>`).join("")}</tbody></table>
+   <div class="warn" style="margin-top:14px"><b>Security-fee rule:</b> <code>security_fee_status = SD_TXN_ID present ? PAID : (on-site ? PENDING : NOT_APPLICABLE)</code> — the deposit is collected on-site after the technician arrives, NOT at booking. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID (join BOOKING.TASK_ID); only the single D&A-assigned CSP migrates (LATE_INTERESTED dropped).</div>`;
+  panesEl.appendChild(pane);
+})();
 // ---- exhaustive full-schema row builders: fill every column from per-case params ----
 function dv(v,d){return (v===undefined||v===null)?d:v;}
 function cspRow(p){return p.cspId?[p.cspId,"LOOKUP","csp_account by partner_id "+dv(p.partnerId,"?")]:["⚠ no csp_account row yet","LOOKUP","csp_account.csp_id WHERE partner_id="+dv(p.partnerId,"?")+" (P1)"];}
@@ -433,7 +456,7 @@ function allocRows(p){var c=cspRow(p);return [
 function candRows(p){
  var c=cspRow(p); var sN=dv(p.completedStepN,0);
  var exec = p.executorId?[p.executorId,"LOOKUP","ASSIGNEE "+dv(p.assignee,"")+" → csp_user.legacy_user_id → id (P2)"]:(p.noExecutor?["(none yet)","CONST","no ASSIGNEE — technician not assigned"]:["⚠ executor not onboarded","LOOKUP","ASSIGNEE "+dv(p.assignee,"")+" → csp_user (P2)"]);
- var fee=dv(p.feeStatus,"PAID");
+ var fee=dv(p.feeStatus,"NOT_APPLICABLE");
  return [
  ["execution_candidate_id","(new UUID)","MINT","one per install attempt"],
  ["authority_entity_id","(new UUID)","MINT","D&A allocation event id"],
@@ -486,7 +509,7 @@ function candRows(p){
  ["completed_step",dv(p.completedStep,"0"),"OLD","TASKS.COMPLETED_STEP"],
  ["otp_verified",dv(p.otp,"false"),"OLD","child OTP_VERIFIED task"],
  ["otp_attempts_current_issuance","0","CONST","default"],
- ["security_fee_status",fee,"RULE","BOOKING.SD_TXN_ID present → PAID (₹300 pre-paid at booking)"],
+ ["security_fee_status",fee,"RULE","SD_TXN_ID present → PAID; null while on-site → PENDING; pre-arrival → NOT_APPLICABLE (₹300 deposit collected ON-SITE after arrival)"],
  ["security_fee_paid_at",(fee==="PAID"?dv(p.feePaidAt,"(SD pay ts)"):"NULL"),(fee==="PAID"?"OLD":"NULL"),"BOOKING SD"],
  ["security_fee_transaction_id",(fee==="PAID"?dv(p.feeTxn,"← BOOKING.SD_TXN_ID"):"NULL"),(fee==="PAID"?"OLD":"NULL"),"BOOKING.SD_TXN_ID"],
  ["network_type",dv(p.networkType,"NULL"),(p.networkType?"OLD":(sN>=4?"TBD":"NULL")),(sN>=4?"CONNECTION_INFO payload":"not captured yet")],
@@ -613,9 +636,9 @@ function showWorked(){
   });
   showPane(`pane_wx_${CASES[0].id}`);
 }
-[["approach","Approach & Process"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (11)"]].forEach(([k,lbl])=>{
+[["approach","Approach & Process"],["oldnew","Old → New Map"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (11)"]].forEach(([k,lbl])=>{
   const b=document.createElement("button");b.className="toptab";b.dataset.k=k;b.textContent=lbl;
-  b.onclick=()=> k==="approach"?showStatic("approach","pane_approach"):k==="prereq"?showStatic("prereq","pane_prereq"):k==="menu"?showStatic("menu","pane_menu"):showWorked();
+  b.onclick=()=> k==="approach"?showStatic("approach","pane_approach"):k==="oldnew"?showStatic("oldnew","pane_oldnew"):k==="prereq"?showStatic("prereq","pane_prereq"):k==="menu"?showStatic("menu","pane_menu"):showWorked();
   tabsEl.appendChild(b);
 });
 showStatic("approach","pane_approach");
