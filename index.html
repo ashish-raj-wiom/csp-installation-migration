@@ -389,7 +389,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
    <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states</b><div class="rule">The migration is driven <b>from the old world</b>: every old install state — <code>BOOKING_STATE</code> + <code>INSTALLATION.COMPLETED_STEP</code> + <code>SD_TXN_ID</code> — maps to exactly one new install-candidate state. The ₹300 security deposit is collected <b>on-site</b> (<code>SD_TXN_ID</code> is 0% set until ROHIT_ARRIVED, then 94%), so <b>FEE_COLLECTION_PENDING is a real state</b> (Case 8). <b style="color:#0a7a3d">Green = in scope</b> · <b style="color:#b25b00">amber = terminal (out of scope)</b>.</div></div>
    <table class="menu"><thead><tr><th>OLD-world state</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>Case</th></tr></thead>
    <tbody>${MAP.map(m=>`<tr class="${m[4]==='out'?'term':'live'}"><td><b>${m[0]}</b></td><td><code>${m[1]}</code></td><td><b>${m[2]}</b></td><td>${m[3]}</td><td>${m[4]==='out'?'—':m[4]}</td></tr>`).join("")}</tbody></table>
-   <div class="warn" style="margin-top:14px"><b>Security-fee rule:</b> <code>security_fee_status = SD_TXN_ID present ? PAID : (on-site ? PENDING : NOT_APPLICABLE)</code> — the deposit is collected on-site after the technician arrives, NOT at booking. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID (join BOOKING.TASK_ID); only the single D&A-assigned CSP migrates (LATE_INTERESTED dropped).</div>`;
+   <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate.</b> A candidate is POST_FEE / OTP / RATING <b>only if SD_TXN_ID is set</b>; if it is null while on-site the state is <b>FEE_COLLECTION_PENDING regardless of COMPLETED_STEP</b>. On-site derivation precedence: <code>COMPLETED_STEP≤1 → ARRIVED/PRE_FEE (fee not due) · else SD_TXN_ID null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. And <code>security_fee_status = SD_TXN_ID ? PAID : (on-site &amp; step≥2 ? PENDING : NOT_APPLICABLE)</code> — deposit collected on-site, not at booking. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID (join BOOKING.TASK_ID); only the single D&amp;A-assigned CSP migrates (LATE_INTERESTED dropped).</div>`;
   panesEl.appendChild(pane);
 })();
 // ---- exhaustive full-schema row builders: fill every column from per-case params ----
@@ -509,7 +509,7 @@ function candRows(p){
  ["completed_step",dv(p.completedStep,"0"),"OLD","TASKS.COMPLETED_STEP"],
  ["otp_verified",dv(p.otp,"false"),"OLD","child OTP_VERIFIED task"],
  ["otp_attempts_current_issuance","0","CONST","default"],
- ["security_fee_status",fee,"RULE","SD_TXN_ID present → PAID; null while on-site → PENDING; pre-arrival → NOT_APPLICABLE (₹300 deposit collected ON-SITE after arrival)"],
+ ["security_fee_status",fee,"RULE","SD_TXN_ID is AUTHORITATIVE: set → PAID (state may be POST_FEE/OTP/RATING); null while on-site → PENDING → FEE_COLLECTION_PENDING regardless of step; pre-arrival → NOT_APPLICABLE"],
  ["security_fee_paid_at",(fee==="PAID"?dv(p.feePaidAt,"(SD pay ts)"):"NULL"),(fee==="PAID"?"OLD":"NULL"),"BOOKING SD"],
  ["security_fee_transaction_id",(fee==="PAID"?dv(p.feeTxn,"← BOOKING.SD_TXN_ID"):"NULL"),(fee==="PAID"?"OLD":"NULL"),"BOOKING.SD_TXN_ID"],
  ["network_type",dv(p.networkType,"NULL"),(p.networkType?"OLD":(sN>=4?"TBD":"NULL")),(sN>=4?"CONNECTION_INFO payload":"not captured yet")],
