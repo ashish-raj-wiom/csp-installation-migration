@@ -155,15 +155,15 @@ const CASES = [
  }
 },
 {
- id:"c2", title:"Case 2 · Accepted, awaiting slot", key:"LEAD_ALLOCATION 1781327277666626 · partner 281749854634433",
- rule:"CSP accepted (STATUS=2, INTEREST_STATUS=LATE_INTERESTED) but no slot proposed → install candidate AWAITING_SLOT_PROPOSAL.",
+ id:"c2", title:"Case 2 · Assigned CSP, awaiting slot", key:"LEAD_ALLOCATION 1781358596912154 · partner 281749854665053",
+ rule:"New-world D&A assigns the booking directly to ONE CSP (INTEREST_STATUS=NOTIF_SENT — the single notified/assigned partner). No slot proposed yet → install candidate AWAITING_SLOT_PROPOSAL. LATE_INTERESTED also-ran rows are NOT migrated (see scope note).",
  old:[
-  {t:"TASKS · LEAD_ALLOCATION (1781327277666626)", rows:[["STATUS","2 (accepted)"],["INTEREST_STATUS","LATE_INTERESTED"],["PARTNER_ID","281749854634433"],["PARTNER_SLOT_PROPOSED_AT","(none)"],["CUSTOMER_CONFIRMED_TIME","(none)"]]},
+  {t:"TASKS · LEAD_ALLOCATION (1781358596912154)", rows:[["INTEREST_STATUS","NOTIF_SENT (single assigned CSP)"],["PARTNER_ID","281749854665053"],["PARTNER_SLOT_PROPOSED_AT","(none)"],["CUSTOMER_CONFIRMED_TIME","(none)"],["migration note","only the assigned CSP migrates — no LATE_INTERESTED rows"]]},
   {t:"BOOKING (via booking-root TASK_ID)", rows:[["ACCOUNT_ID","→ customer_id"],["SD_AMOUNT","300"]]}
  ],
  neu:{
-  connections:[["current_state","PENDING_INSTALL","CASE","T1 fired on acceptance"],["csp_id","⚠ resolver","LOOKUP","partner 281749854634433 → csp_account (P1)"],["plan_id","22","CONST",""]],
-  alloc:[["allocation_state","ACCEPTED","CASE","CSP took the lead"]],
+  connections:[["current_state","PENDING_INSTALL","CASE","T1 fired on assignment/acceptance"],["csp_id","⚠ resolver","LOOKUP","partner 281749854665053 → csp_account (P1)"],["plan_id","22","CONST",""]],
+  alloc:[["allocation_state","ACCEPTED","CASE","single assigned CSP"],["allocation_event_type","NEW_DEMAND","RULE","direct D&A assignment"]],
   cand:[["current_state","AWAITING_SLOT_PROPOSAL","CASE","no slot proposed"],["task_status","OPEN","CASE",""],["completed_step","0","OLD",""]],
   stephist:null, translog:null, custody:null
  }
@@ -455,7 +455,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_approach";
   pane.innerHTML=`
   <div class="banner" style="border-left-color:#5b2d91"><b>CSP Installation Migration — How this works</b><div class="rule">Same method as the ISP-Recharge migration template, applied to the Installation workflow. A live install in the old DynamoDB world (a TASKS task-tree + a BOOKING row) is re-projected into the new CSP-OS tables across 5 services. Every NEW column carries a provenance chip back to an OLD source, a resolver, or a PM rule.</div></div>
-  <div class="hilite"><b>SCOPE — only in-flight installs are migrated.</b> We migrate <b>only installs that are in between</b> — accepted by a CSP and underway, but not yet finished (install candidate <code>task_status = OPEN</code>, connection <code>PENDING_INSTALL</code>). <b>NOT migrated:</b> installed/active (terminal success), declined/failed, cancelled (by customer or upstream), and expired. Already-active connections are owned by the connection/recharge backbone, not this workflow; the failed/cancelled tail is dropped. customer_access_states is never migrated (auto-created at activation).</div>
+  <div class="hilite"><b>SCOPE — only in-flight installs are migrated.</b> We migrate <b>only installs that are in between</b> — accepted by a CSP and underway, but not yet finished (install candidate <code>task_status = OPEN</code>, connection <code>PENDING_INSTALL</code>). <b>NOT migrated:</b> installed/active (terminal success), declined/failed, cancelled (by customer or upstream), and expired. Already-active connections are owned by the connection/recharge backbone, not this workflow; the failed/cancelled tail is dropped. customer_access_states is never migrated (auto-created at activation). <b>Single CSP only:</b> the new world's D&A assigns each booking directly to one CSP, so only that assigned CSP's record migrates — old-world <code>LATE_INTERESTED</code> also-ran rows (the losers of the first-come-first-served race) are excluded entirely.</div>
   <div class="flow3">
     <div class="step now"><div class="n">1</div><div class="t">PRODUCT</div><div class="d">Defines logic per entity.<br>Every NEW column &larr; OLD source (TASKS / BOOKING).<br>Derivations = PM-defined, never inferred.</div><div class="tag">CURRENT PHASE</div></div>
     <div class="arr">&rarr;</div>
