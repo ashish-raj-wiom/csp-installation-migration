@@ -303,37 +303,6 @@ const CASES = [
   cand:[["current_state","TECHNICIAN_ASSIGNED","CASE","rohit assigned"],["task_status","OPEN","CASE",""],["completed_step","0","OLD",""],["executor_id","⚠ resolver","LOOKUP","ASSIGNEE → csp_user (P2)"]],
   stephist:null, translog:null, custody:null
  }
-},
-{
- id:"installed", title:"Installed → active (OUT OF SCOPE)", key:"connection ACTIVE",
- rule:"STATUS=2, COMPLETED_STEP=8 (RATING done) → install complete. CUSTOMER_INSTALLATION_CONFIRMED fires: connection ACTIVE, allocation ACTIVE, candidate CONNECTION_ACTIVE.",
- warn:"OUT OF SCOPE — NOT migrated by this workflow. Already-installed/active connections are owned by the connection/recharge backbone. Shown for reference only.",
- old:[
-  {t:"TASKS · INSTALLATION", rows:[["STATUS","2 (completed)"],["COMPLETED_STEP","8"],["RATING_DONE","true"]]},
-  {t:"BOOKING", rows:[["BOOKING_STATE","INSTALLED / ACTIVE"],["DEVICE_ID","→ netbox_custody DEPLOYED"]]}
- ],
- neu:{
-  connections:[["current_state","ACTIVE","CASE","CUSTOMER_INSTALLATION_CONFIRMED"],["activated_at","← completion ts","OLD",""],["installation_complete_at","← completion ts","OLD",""]],
-  alloc:[["allocation_state","ACTIVE","CASE","ACCEPTED→ACTIVE at CL_CONNECTION_ACTIVATED"]],
-  cand:[["current_state","CONNECTION_ACTIVE","CASE","terminal"],["task_status","COMPLETED","CASE",""],["completed_step","8","OLD",""],["customer_rating","← RATING task","OLD",""]],
-  stephist:null, translog:null,
-  custody:[["status","DEPLOYED","CASE",""],["device_id","← BOOKING.DEVICE_ID","OLD",""],["was_ever_deployed","true","RULE",""]]
- }
-},
-{
- id:"failed", title:"Failed / declined / cancelled (OUT OF SCOPE)", key:"connection PENDING_DEACTIVATION",
- rule:"STATUS=-1 (REMARKS 'Partner Declined Post assigning'). Prod: 655 of 1019 candidates — dominant outcome connection PENDING_DEACTIVATION (412); retry → REQUESTED/PENDING_INSTALL is the minority (~13%).",
- warn:"OUT OF SCOPE — NOT migrated. Declined / failed / cancelled / expired installs are dropped, not re-projected. Shown for reference only.",
- old:[
-  {t:"TASKS · INSTALLATION", rows:[["STATUS","-1 (declined)"],["REMARKS","Partner Declined Post assigning"],["REMARK_TYPE","reason text"]]},
-  {t:"BOOKING", rows:[["BOOKING_STATE","cancelled / failed"]]}
- ],
- neu:{
-  connections:[["current_state","PENDING_DEACTIVATION (dom.) / REQUESTED (retry) / PENDING_INSTALL (awaiting retry)","CASE","by retry_count vs exhaustion (T3/T12)"],["retry_count","← TASKS","OLD",""]],
-  alloc:[["allocation_state","REALLOCATION_PENDING / RELEASED","CASE",""]],
-  cand:[["current_state","INSTALLATION_REPORTED_FAILED","CASE","terminal"],["task_status","CANCELLED","CASE",""],["failure_reason","← REMARKS / REMARK_TYPE","OLD",""]],
-  stephist:null, translog:null, custody:null
- }
 }
 ];
 
@@ -422,18 +391,14 @@ const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
    ["8","Fee collection pending","COMPLETED_STEP=2 (AADHAR)","FEE_COLLECTION_PENDING","PENDING_INSTALL","ACCEPTED","live"],
    ["9","On-site, post-fee ⭐","COMPLETED_STEP=3/4/5 (SHARED/CONNECTION_INFO/DEVICE_PHOTO)","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","ACCEPTED","live"],
    ["10","Awaiting OTP","COMPLETED_STEP=6 (SPEED_TEST done)","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","ACCEPTED","live"],
-   ["11","Rating pending","COMPLETED_STEP=7 (OTP done)","RATING_PENDING","PENDING_INSTALL","ACCEPTED","live"],
-   ["12","Installed → active","STATUS=2; COMPLETED_STEP=8","CONNECTION_ACTIVE","ACTIVE","ACTIVE","term"],
-   ["13","Failed / declined","STATUS=-1 (Partner Declined)","INSTALLATION_REPORTED_FAILED","PENDING_DEACTIVATION / REQUESTED","REALLOCATION_PENDING","term"],
-   ["14","Cancelled upstream / by customer","reassigned / IS_AUTO_DECLINED / customer cancel","CANCELLED_BY_UPSTREAM / CANCELLED_BY_CUSTOMER","PENDING_DEACTIVATION","REALLOCATION_PENDING / RELEASED","term"],
-   ["15","Expired","INSTALLATION open >90d, no progress","INSTALLATION_EXPIRED","REQUESTED / PENDING_INSTALL","RELEASED","term"]
+   ["11","Rating pending","COMPLETED_STEP=7 (OTP done)","RATING_PENDING","PENDING_INSTALL","ACCEPTED","live"]
   ];
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_menu";
   pane.innerHTML=`
-   <div class="banner"><b>Case menu — 15 install archetypes</b><div class="rule">Every old-world install collapses into one of these by where it sits in the 20-state machine (read off TASKS columns). <b style="color:#0a7a3d">Green = IN SCOPE</b> (in-flight, migrated) · <b style="color:#b25b00">Amber = OUT OF SCOPE</b> (terminal, NOT migrated). Case 9 (⭐) is fully column-mapped in the <b>Worked example</b> tab. allocation = the live OPEN value (ACCEPTED through the whole install; ACTIVE only at completion).</div></div>
-   <table class="menu"><thead><tr><th>#</th><th>Case</th><th>Old TASKS signature</th><th>install_execution_candidate state</th><th>connection</th><th>allocation</th><th>Migrate?</th></tr></thead>
-   <tbody>${MENU.map(m=>`<tr class="${m[6]}"><td><b>${m[0]}</b></td><td>${m[1]}</td><td><code>${m[2]}</code></td><td><b>${m[3]}</b></td><td>${m[4]}</td><td>${m[5]}</td><td style="font-weight:800;color:${m[6]==='live'?'#0a7a3d':'#b25b00'}">${m[6]==='live'?'✓ yes':'✗ no'}</td></tr>`).join("")}</tbody></table>
-   <div class="warn" style="margin-top:14px"><b>In scope = cases 1–11 only</b> (in-flight: accepted → on-site → rating, candidate task_status=OPEN). <b>Out of scope = cases 12–15</b>: installed/active (backbone owns it), failed, cancelled, expired — these are dropped, not re-projected. customer_access_states is never migrated (auto at activation).</div>`;
+   <div class="banner"><b>Case menu — 11 in-flight archetypes (the full migration scope)</b><div class="rule">These 11 are the only installs we migrate — each in-flight install collapses into one of these by where it sits in the 20-state machine (read off TASKS columns). Case 9 (⭐) is fully column-mapped in the <b>Worked example</b> tab. allocation = the live OPEN value (ACCEPTED through the whole install; ACTIVE only at completion).</div></div>
+   <table class="menu"><thead><tr><th>#</th><th>Case</th><th>Old TASKS signature</th><th>install_execution_candidate state</th><th>connection</th><th>allocation</th></tr></thead>
+   <tbody>${MENU.map(m=>`<tr class="live"><td><b>${m[0]}</b></td><td>${m[1]}</td><td><code>${m[2]}</code></td><td><b>${m[3]}</b></td><td>${m[4]}</td><td>${m[5]}</td></tr>`).join("")}</tbody></table>
+   <div class="warn" style="margin-top:14px"><b>Out of scope (NOT migrated):</b> installed/active (owned by the connection/recharge backbone), declined/failed, cancelled (customer or upstream), and expired — these terminal states are dropped, not re-projected. customer_access_states is never migrated (auto-created at activation).</div>`;
   panesEl.appendChild(pane);
 })();
 
@@ -466,7 +431,7 @@ function showWorked(){
   });
   showPane(`pane_wx_${CASES[0].id}`);
 }
-[["approach","Approach & Process"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (15)"]].forEach(([k,lbl])=>{
+[["approach","Approach & Process"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (11)"]].forEach(([k,lbl])=>{
   const b=document.createElement("button");b.className="toptab";b.dataset.k=k;b.textContent=lbl;
   b.onclick=()=> k==="approach"?showStatic("approach","pane_approach"):k==="prereq"?showStatic("prereq","pane_prereq"):k==="menu"?showStatic("menu","pane_menu"):showWorked();
   tabsEl.appendChild(b);
