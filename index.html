@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSP Installation Migration — Old (DynamoDB) → New (CSP-OS) Mapping</title>
+<style>
+  :root{
+    --old:#0a7a3d; --oldbg:#e8f6ee;
+    --lookup:#b25b00; --lookupbg:#fdf1e2;
+    --const:#1259a6; --constbg:#e9f1fb;
+    --case:#5b2d91; --casebg:#f0eafa;
+    --mint:#9c1d7a; --mintbg:#fbe9f5;
+    --tbd:#8a8a00; --tbdbg:#fbfbe0;
+    --null:#666; --nullbg:#f0f0f0;
+    --rule:#0e6e6e; --rulebg:#e3f4f4;
+  }
+  *{box-sizing:border-box}
+  body{font-family:'Segoe UI',system-ui,sans-serif;margin:0;background:#f4f5f7;color:#1c1e21;font-size:13px}
+  header{background:#16243a;color:#fff;padding:16px 24px}
+  header h1{margin:0;font-size:19px}
+  header p{margin:5px 0 0;color:#9fb3d1;font-size:12px;line-height:1.5}
+  .tabs{display:flex;gap:6px;padding:12px 24px 0;background:#16243a;flex-wrap:wrap}
+  .toptab{padding:11px 24px;border-radius:9px 9px 0 0;background:#22344f;color:#cfdcef;cursor:pointer;font-weight:700;font-size:14px;border:none;letter-spacing:.02em}
+  .toptab.active{background:#f4f5f7;color:#16243a}
+  #subtabs{display:none;gap:6px;padding:11px 24px;background:#e3e8ef;flex-wrap:wrap;align-items:center;border-bottom:1px solid #d2dae4}
+  #subtabs .wflabel{font-size:11px;font-weight:800;letter-spacing:.08em;color:#5b6b82;margin-right:6px}
+  .subtab{padding:7px 13px;border-radius:7px;background:#fff;color:#33415c;cursor:pointer;font-weight:600;font-size:12px;border:1px solid #cbd5e2}
+  .subtab.active{background:#16243a;color:#fff;border-color:#16243a}
+  .cnote{padding:8px 14px;font-size:11px;color:#1259a6;background:#f4f8fe;border-bottom:1px solid #e0e8f3;line-height:1.5}
+  .legend{display:flex;gap:8px;flex-wrap:wrap;padding:12px 24px;align-items:center}
+  .chip{padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700}
+  .chip.OLD{color:var(--old);background:var(--oldbg)}
+  .chip.LOOKUP{color:var(--lookup);background:var(--lookupbg)}
+  .chip.API{color:var(--lookup);background:var(--lookupbg)}
+  .chip.CONST{color:var(--const);background:var(--constbg)}
+  .chip.CASE{color:var(--case);background:var(--casebg)}
+  .chip.RULE{color:var(--rule);background:var(--rulebg)}
+  .chip.MINT{color:var(--mint);background:var(--mintbg)}
+  .chip.TBD{color:var(--tbd);background:var(--tbdbg)}
+  .chip.NULL{color:var(--null);background:var(--nullbg)}
+  .legend span.lbl{font-size:11px;color:#555;margin-right:2px}
+  .casepane{display:none;padding:0 24px 40px}
+  .casepane.active{display:block}
+  .banner{background:#fff;border-left:5px solid #16243a;border-radius:6px;padding:12px 16px;margin:4px 0 16px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .banner b{font-size:14px}
+  .banner .rule{color:#444;margin-top:4px;font-size:12.5px;line-height:1.5}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media(max-width:1100px){.cols{grid-template-columns:1fr}}
+  .side-title{font-size:14px;font-weight:800;letter-spacing:.06em;margin:6px 0 10px;color:#16243a}
+  .side-title.newW{color:#5b2d91}
+  .card{background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden}
+  .card h3{margin:0;padding:9px 14px;font-size:12.5px;background:#eef1f5;border-bottom:1px solid #e0e4ea;color:#16243a}
+  .card h3 .svc{font-weight:400;color:#667;font-size:11px}
+  .card.absent h3{background:#f7f7f7;color:#999}
+  .card.absent .why{padding:10px 14px;color:#888;font-style:italic}
+  table{width:100%;border-collapse:collapse}
+  td{padding:5px 10px;border-bottom:1px solid #f0f1f3;vertical-align:top;font-size:12px}
+  td.f{font-weight:600;color:#33415c;white-space:nowrap;width:34%}
+  td.v{font-family:'Consolas',monospace;font-size:11.5px;word-break:break-word}
+  td.s{font-size:10.5px;color:#667;width:38%}
+  tr.t-OLD td.v{color:var(--old);background:var(--oldbg)}
+  tr.t-LOOKUP td.v,tr.t-API td.v{color:var(--lookup);background:var(--lookupbg)}
+  tr.t-CONST td.v{color:var(--const);background:var(--constbg)}
+  tr.t-CASE td.v{color:var(--case);background:var(--casebg);font-weight:700}
+  tr.t-RULE td.v{color:var(--rule);background:var(--rulebg);font-weight:700}
+  tr.t-MINT td.v{color:var(--mint);background:var(--mintbg)}
+  tr.t-TBD td.v{color:var(--tbd);background:var(--tbdbg)}
+  tr.t-NULL td.v{color:var(--null);background:var(--nullbg)}
+  .warn{background:#fff4e5;border-left:4px solid #e8901a;padding:8px 12px;border-radius:4px;margin:0 0 14px;font-size:12px;line-height:1.5}
+  .hilite{background:#efe7fb;border:1.5px solid #5b2d91;border-left:6px solid #5b2d91;padding:11px 15px;border-radius:6px;margin:0 0 14px;font-size:12.5px;line-height:1.6;color:#3d1d63}
+  .seqwrap{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 28px;margin-top:6px}
+  @media(max-width:900px){.seqwrap{grid-template-columns:1fr}}
+  .seqrow{display:flex;align-items:flex-start;gap:11px;background:#fff;border-radius:7px;padding:9px 13px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .seqrow .sn{flex:none;width:26px;height:26px;border-radius:50%;background:#16243a;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+  .seqrow .st{font-weight:600;color:#1c1e21;font-size:12.5px}
+  .seqrow .ss{font-size:11px;color:#777;line-height:1.45}
+  .seqrow.k1 .sn{background:#5b2d91}
+  .seqrow.kb .sn{background:#b25b00}
+  .flow3{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+  .step{flex:1;min-width:200px;background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);position:relative;border-top:4px solid #c8d2e0}
+  .step.now{border-top-color:#5b2d91}
+  .step .n{font-size:26px;font-weight:800;color:#c8d2e0}
+  .step.now .n{color:#5b2d91}
+  .step .t{font-weight:800;letter-spacing:.08em;margin:2px 0 6px;color:#16243a;font-size:13px}
+  .step .d{font-size:12px;color:#555;line-height:1.55}
+  .step .tag{position:absolute;top:10px;right:10px;background:#f0eafa;color:#5b2d91;font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px}
+  .arr{align-self:center;font-size:22px;color:#9aa7ba;font-weight:700}
+  .flow6{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  @media(max-width:1100px){.flow6{grid-template-columns:repeat(3,1fr)}}
+  .m{background:#fff;border-radius:8px;padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .m b{display:block;color:#16243a;margin-bottom:4px;font-size:12px}
+  .m span{color:#666;font-size:11px;line-height:1.4;display:block}
+  .readhint{display:flex;gap:12px;align-items:center;background:#fff;border-radius:8px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,.06);font-size:12.5px;flex-wrap:wrap}
+  .menu{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .menu th{background:#16243a;color:#fff;font-size:11px;text-align:left;padding:8px 10px;letter-spacing:.03em}
+  .menu td{font-size:11.5px;padding:7px 10px;border-bottom:1px solid #eef0f3}
+  .menu tr.live td:first-child{border-left:3px solid #0a7a3d}
+  .menu tr.term td:first-child{border-left:3px solid #b25b00}
+  .menu code{background:#f0f1f3;padding:1px 5px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>CSP Installation Migration — Old (DynamoDB) → New (CSP-OS) Mapping <span style="font-size:12px;color:#9fb3d1">(Installation workflow)</span></h1>
+  <p>Real production samples (data as of 2026-06-13 IST). OLD source: Snowflake <code>PROD_DB.DYNAMODB</code> — <b>TASKS</b> (task tree / state) + <b>BOOKING</b> (customer identity, address, aadhar, security deposit). NEW schemas: csp-os-yaml prod read-replica (Flyway migrations + live tables). Resolvers: csp_id via <code>csp_gateway.csp_account</code>, executor_id via <code>csp_gateway.csp_user.legacy_user_id</code>, zone_id via <code>csp_capacity_coverage</code> point-in-polygon resolve. Pick a tab above, then a case.</p>
+</header>
+<div class="tabs" id="tabs"></div>
+<div id="subtabs"></div>
+<div class="legend">
+  <span class="lbl">Provenance:</span>
+  <span class="chip OLD">OLD — direct from TASKS / BOOKING</span>
+  <span class="chip LOOKUP">LOOKUP — resolver table (csp_account / csp_user)</span>
+  <span class="chip API">API — service resolve (zone / customer)</span>
+  <span class="chip RULE">RULE — PM derivation</span>
+  <span class="chip CONST">CONST — constant / default</span>
+  <span class="chip CASE">CASE — case definition</span>
+  <span class="chip MINT">MINT — new id at migration</span>
+  <span class="chip TBD">TBD — still pending</span>
+</div>
+<div id="panes"></div>
+
+<script>
+function esc(s){return String(s).replace(/&(?!amp;|lt;|gt;)/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+
+const NEWMETA = {
+  connections:{label:"connections", svc:"CLOS · csp_connection_lifecycle_service"},
+  alloc:{label:"connection_allocations", svc:"D&A · csp_demand_allocation_service"},
+  cand:{label:"install_execution_candidates", svc:"TAS · csp_tas_service"},
+  stephist:{label:"installation_step_history", svc:"TAS · csp_tas_service (backfill)"},
+  translog:{label:"install_state_transition_log", svc:"TAS · csp_tas_service (synthetic)"},
+  custody:{label:"netbox_custody", svc:"ACS · csp_asset_custody_service"}
+};
+const ABSENT_WHY = {
+  cand:"No install candidate exists until the CSP accepts the allocation (created on ALLOCATION_ACCEPTED).",
+  stephist:"Backfilled only if the install reached on-site steps; empty for pre-arrival cases.",
+  translog:"One synthetic MIGRATED transition is seeded; full per-state history is not reconstructable.",
+  custody:"netbox_custody row exists only once a device is bound on-site (CUSTODIED→DEPLOYED). Absent pre-arrival.",
+  alloc:"No allocation row before the booking is offered to a CSP."
+};
+
+// ===================== INSTALLATION WORKFLOW =====================
+const CASES = [
+{
+ id:"sumit", title:"⭐ Worked example · On-site (COMPLETED_STEP=4 → POST_FEE)", key:"TASK_ID 1781335322392052 · customer 281749855088053",
+ rule:"LEAD_ALLOCATION accepted (STATUS=2) · technician Gulshan assigned · customer confirmed slot · INSTALLATION open (STATUS=1) at COMPLETED_STEP=4 (CONNECTION_INFO done) → connection PENDING_INSTALL, allocation ACCEPTED, install candidate INSTALLATION_IN_PROGRESS_POST_FEE (completed_step=4).",
+ hi:"<b>State vs completed_step:</b> INSTALLATION_IN_PROGRESS_POST_FEE covers COMPLETED_STEP 3/4/5 — the state machine self-loops and the granular position is carried by the separate <code>completed_step</code> integer (next required step = completed_step+1). Migration must set <b>both</b> current_state AND completed_step.",
+ old:[
+  {t:"TASKS · INSTALLATION (1781335322392052) — Snowflake PROD_DB.DYNAMODB", rows:[
+    ["ID","1781335322392052"],["TYPE","INSTALLATION"],["STATUS","1 (open / in-progress)"],["COMPLETED_STEP","4 (CONNECTION_INFO done)"],
+    ["PARTNER_ID","281749854824813 (CSP)"],["ASSIGNEE","281612415879954 (rohit/technician)"],["ASSIGNEE_NAME","Gulshan"],
+    ["SLOT_TIME","2026-06-14T05:29:59+05:30"],["SLOT_ID","4"],["ASSIGNED_TIME","2026-06-13T12:18:58+05:30"],
+    ["IS_CALLED","true"],["IS_SELF_ASSIGNED","false"],["MOBILE","9354077816 (not migrated)"],
+    ["CREATED / MODIFIED","2026-06-13T12:18:58 / 15:37:23"],
+    ["EXTRA_DATA.deviceId","GX153715"],["EXTRA_DATA.opticalPower","-20.9691"],["EXTRA_DATA.ssid","sumit_7816"],
+    ["EXTRA_DATA.planSpeed","100"],["EXTRA_DATA.installation_tat_time","2026-06-13T23:59:59Z"],["EXTRA_DATA.assigned_task_id","1781335162716798"]
+  ]},
+  {t:"TASKS · LEAD_ALLOCATION (1781335162716798) — the allocation", rows:[
+    ["TYPE","LEAD_ALLOCATION"],["STATUS","2 (accepted)"],["SOURCE","ginie-delivery-allocation"],["INTEREST_STATUS","ASSIGNED"],
+    ["PARTNER_SLOT_PROPOSED_AT","2026-06-13T12:17:29+05:30"],["PROPOSED_SLOT_TIME","2026-06-14T05:29:59+05:30"],
+    ["CUSTOMER_CONFIRMED_TIME","2026-06-13T06:48:19Z"],["INTERESTED_TIME","2026-06-13T12:17:23+05:30"],
+    ["NEAREST_DISTANCE","9"],["ASSIGNEE","281612415879954 (Gulshan)"],["PARENT_ID","1781334572037746 (booking root)"],
+    ["CREATED","2026-06-13T12:17:07+05:30"]
+  ]},
+  {t:"TASKS · child step-tasks (PARENT_ID = INSTALLATION.ID)", rows:[
+    ["SELFIE","STATUS=2 (done)"],["AADHAR","STATUS=2 (done)"],["SHARED","STATUS=2 (done)"],["CONNECTION_INFO","STATUS=2 (done)"],
+    ["DEVICE_PHOTO","pending (step 5)"],["SPEED_TEST","pending (step 6)"],["OTP_VERIFIED","pending (step 7)"],["RATING","pending (step 8)"],
+    ["note","child RSLVD_DATETIME mostly sentinel 0000-12-30 → unreliable timestamps"]
+  ]},
+  {t:"BOOKING (TASK_ID = 1781335322392052) — customer identity & deposit", rows:[
+    ["ACCOUNT_ID","281749855088053  →  customer_id"],["NAME","sumit"],["BOOKING_STATE","ROHIT_ARRIVED"],
+    ["PLAN_ID","null (→ hardcode 22)"],["DEVICE_ID","GX153715"],["SSID","sumit_7816"],["NASID","704323"],
+    ["SD_TXN_ID","custGen_9354077816_203507326_1"],["SD_AMOUNT","300 (security deposit = security_fee)"],["SD_CONFIG_ID","5"],
+    ["AADHAR_FRONT_URL","9354077816/AADHAR_FRONT"],["AADHAR_BACK_URL","9354077816/AADHAR_BACK"],
+    ["ADDRESS","{home:551 B, locality:Chirag Dilli 110017, city:New Delhi}"],["LAT / LNG","28.5380495 / 77.2306360"],
+    ["SLOT_DETAILS","{slotId:233682, assigneeName:Gulshan, slotEndTime:2026-06-14T19:00}"]
+  ]}
+ ],
+ neu:{
+  connections:[
+   ["connection_id","(new UUID)","MINT","minted at INSERT — spine for all joins"],
+   ["customer_id","281749855088053","OLD","BOOKING.ACCOUNT_ID (join BOOKING.TASK_ID = INSTALLATION.ID)"],
+   ["csp_id","⚠ no csp_account row yet","LOOKUP","csp_gateway.csp_account.csp_id WHERE partner_id=281749854824813 — partner must be onboarded (Prereq P1)"],
+   ["zone_id","(resolved from lat/lng)","API","CC POST /capacity/zones/resolve(28.5380,77.2306) point-in-polygon (P3); OUT_OF_COVERAGE if outside all polygons"],
+   ["service_address","{line1, 110017, New Delhi, lat, lng}::jsonb","OLD","BOOKING.ADDRESS + LAT/LNG"],
+   ["plan_id","22","CONST","hardcoded for all installs"],
+   ["current_state","PENDING_INSTALL","CASE","T1 fired on ALLOCATION_ACCEPTED; →ACTIVE only at CUSTOMER_INSTALLATION_CONFIRMED"],
+   ["state_timestamp","2026-06-13T12:18:58+05:30","OLD","TASKS.MODIFIED"],
+   ["retry_count","0","OLD","no reschedule"],
+   ["retry_exhausted","false","CONST","default"],
+   ["pause_count","0","CONST","default"],
+   ["pause_reason / p76_timer_start","NULL","NULL","not paused"],
+   ["installation_complete_at / activated_at / deactivated_at","NULL","CASE","set only at activation (Case: Installed)"],
+   ["total_active_duration / total_pause_duration","0","CONST","default"],
+   ["version","1","CONST","default"],
+   ["correlation_id / causation_id","csp-migration-<batch>","MINT","audit"],
+   ["deactivation_reason / prior_caeo_state","NULL","NULL",""],
+   ["latest_recharge_window_end","NULL","NULL","recharge-domain; N/A for in-flight install"],
+   ["created_at / updated_at","2026-06-13T12:18:58+05:30","OLD","TASKS.CREATED / MODIFIED"]
+  ],
+  alloc:[
+   ["id","(new UUID)","MINT","allocation PK (≠ candidate.allocation_id)"],
+   ["connection_id","(same minted UUID)","MINT",""],
+   ["csp_id","⚠ no csp_account row yet","LOOKUP","csp_account by partner_id 281749854824813 (P1)"],
+   ["zone_id","(= connection's zone)","API","propagates 1:1 from connection (100% in prod)"],
+   ["allocation_state","ACCEPTED","CASE","CSP took the lead; →ACTIVE only at CL_CONNECTION_ACTIVATED (completion)"],
+   ["allocation_event_type","NEW_DEMAND","RULE","TASKS.SOURCE=ginie-delivery-allocation, no reroute"],
+   ["acceptance_timestamp","2026-06-13T12:17:07+05:30","OLD","notif-to-partner = LEAD_ALLOCATION.CREATED (NOT customer-confirm)"],
+   ["assigned_at","2026-06-13T12:18:58+05:30","OLD","TASKS.ASSIGNED_TIME"],
+   ["previous_csp_id","NULL","OLD","no reroute"],
+   ["retry_count","0","OLD",""],
+   ["assignment_count_per_csp","{csp:1}","RULE","from allocation history"],
+   ["candidate_csps_with_radius","{csp:9}","OLD","TASKS.NEAREST_DISTANCE=9 / PARTNER_LAT_LNG"],
+   ["decline_cooldown_csp_ids","[]","CONST","no declines"],
+   ["parallel_install_warning","false","CONST","default"],
+   ["trigger_source / reassignment_reason / reallocation_pending_at / existing_csp_id / exit_risk_level / deactivation_initiated_at / released_at","NULL","NULL",""],
+   ["version","1","CONST",""],
+   ["created_at / updated_at","2026-06-13T12:17+05:30","OLD","LEAD_ALLOCATION.CREATED / MODIFIED"],
+   ["correlation_id / causation_id","csp-migration-<batch>","MINT",""]
+  ],
+  cand:[
+   ["execution_candidate_id","(new UUID)","MINT","one per install attempt (retries → N rows)"],
+   ["authority_entity_id / allocation_id","(new UUID)","MINT","D&A allocation event id (NOT the alloc PK)"],
+   ["csp_id","⚠ no csp_account row yet","LOOKUP","csp_account by partner_id (P1)"],
+   ["candidate_type / task_family / aggregation_type","PRE_INSTALL / INSTALL / INDIVIDUAL","CONST","fixed"],
+   ["current_state","INSTALLATION_IN_PROGRESS_POST_FEE","RULE","from COMPLETED_STEP=4 (StepSubmissionServiceImpl: SHARED/CONNECTION_INFO/DEVICE_PHOTO → POST_FEE)"],
+   ["task_status","OPEN","CASE","TASKS.STATUS=1"],
+   ["completed_step","4","OLD","TASKS.COMPLETED_STEP — disambiguates the 3 steps inside POST_FEE; next = DEVICE_PHOTO(5)"],
+   ["object_id / connection_id","(same minted UUID)","MINT","object_id = connection_id"],
+   ["zone_id / locality","(resolved)","API","CC resolve (P3)"],
+   ["service_address","{...110017...}","OLD","BOOKING.ADDRESS"],
+   ["customer_name","sumit","OLD","BOOKING.NAME"],
+   ["executor_id","⚠ not onboarded","LOOKUP","ASSIGNEE 281612415879954 → csp_user.legacy_user_id → csp_user.id (P2)"],
+   ["is_self_assigned","false","OLD","TASKS.IS_SELF_ASSIGNED"],
+   ["proposed_slot_date","2026-06-14","OLD","TASKS.PROPOSED_SLOT_TIME"],
+   ["confirmed_slot_date / slot_date","2026-06-14","OLD","TASKS.SLOT_TIME / BOOKING.SLOT_DETAILS"],
+   ["confirmed_slot_at","2026-06-13T06:48:19Z","OLD","TASKS.CUSTOMER_CONFIRMED_TIME"],
+   ["confirmed_slot_number","4","OLD","TASKS.SLOT_ID"],
+   ["slot_confirmation_source","CUSTOMER","RULE","CUSTOMER_CONFIRMED_TIME present (else AUTO)"],
+   ["deadline_at","2026-06-13T23:59:59Z","RULE","EXTRA_DATA.installation_tat_time"],
+   ["p74_deadline_at","(acceptance + P74)","RULE","acceptance_timestamp + P74 window"],
+   ["security_fee_status","PAID","RULE","BOOKING.SD_TXN_ID present (₹300 deposit)"],
+   ["security_fee_transaction_id","custGen_9354077816_203507326_1","OLD","BOOKING.SD_TXN_ID"],
+   ["device_id","GX153715","OLD","TASKS.EXTRA_DATA.deviceId / BOOKING.DEVICE_ID"],
+   ["ssid","sumit_7816","OLD","BOOKING.SSID / EXTRA_DATA.ssid"],
+   ["optical_power_dbm / optical_power_source","-20.97 / CONNECTION_INFO","OLD","EXTRA_DATA.opticalPower (captured at step 4)"],
+   ["network_type / pppoe_*","(from CONNECTION_INFO)","TBD","only in CONNECTION_INFO child payload — confirm capture"],
+   ["extra_data","{aadhar_front, aadhar_back, device/optical}","OLD","BOOKING.AADHAR_*_URL + EXTRA_DATA (see image callout)"],
+   ["otp_verified","false","OLD","OTP step (7) not reached"],
+   ["router_mac / measured_download_mbps / customer_rating","NULL","NULL","steps 5/6/8 not done"],
+   ["radius","9.0","OLD","TASKS.NEAREST_DISTANCE"],
+   ["call_attempts_count","≥1","OLD","TASKS.IS_CALLED=true + call logs"],
+   ["threshold_state / is_csp_actionable","NORMAL / true","RULE","per state"],
+   ["latest_attention_* / acked_attention_version","seed @migration","RULE","seed one STATE_CHANGE attention"],
+   ["state_version / dismiss_count / otp_attempts_current_issuance / pre_paid_bypass_applied","0 / 0 / 0 / false","CONST","default"],
+   ["incentive_* / installation_completed_at / removal_reason / failure_*","NULL","CASE","terminal-only fields"],
+   ["idempotency_key / correlation_id","csp-migration-<batch>","MINT",""],
+   ["created_at / updated_at","2026-06-13T12:18:58+05:30","OLD","TASKS.CREATED / MODIFIED"]
+  ],
+  stephist:[
+   ["(row 1) step_id=SELFIE","result_code=PASS, payload{image_url}","OLD","child SELFIE task (STATUS=2); selfie image source TBD (likely SELFIE task EXTRA_DATA)"],
+   ["(row 2) step_id=AADHAR","result_code=PASS","OLD","child AADHAR task (STATUS=2)"],
+   ["(row 3) step_id=SHARED","result_code=PASS","OLD","child SHARED task (STATUS=2)"],
+   ["(row 4) step_id=CONNECTION_INFO","result_code=PASS","OLD","child CONNECTION_INFO task (STATUS=2)"],
+   ["connection_id (all rows)","(same minted UUID)","MINT",""],
+   ["actor_id (all rows)","⚠ executor not onboarded","LOOKUP","ASSIGNEE → csp_user (P2)"],
+   ["submitted_at","child RSLVD → fallback CREATED","OLD","child RSLVD_DATETIME mostly sentinel 0000-12-30"]
+  ],
+  translog:[
+   ["id / execution_candidate_id","(minted)","MINT",""],
+   ["from_state","NULL","CONST","initial"],
+   ["to_state","INSTALLATION_IN_PROGRESS_POST_FEE","CASE","seed resting state"],
+   ["reason_code","MIGRATION","CONST","synthetic"],
+   ["actor_type / actor_id","OS_SIGNAL / migration-batch","CONST","synthetic"],
+   ["completed_step","4","OLD","TASKS.COMPLETED_STEP"],
+   ["occurred_at","(migration ts)","CONST","full per-state history not reconstructable → one MIGRATED row"]
+  ],
+  custody:[
+   ["device_id","GX153715","OLD","TASKS.EXTRA_DATA.deviceId / BOOKING.DEVICE_ID"],
+   ["csp_id","⚠ no csp_account row yet","LOOKUP","csp_account by partner_id (P1)"],
+   ["status","DEPLOYED","CASE","CUSTODIED→DEPLOYED on DEVICE_BOUND_TO_CONNECTION (NOT 'IN_USE_WITH_CSP' — no such state)"],
+   ["customer_id","281749855088053","OLD","BOOKING.ACCOUNT_ID"],
+   ["connection_id / current_connection_id","(same minted UUID)","MINT",""],
+   ["was_ever_deployed","true","RULE","device bound"],
+   ["device_commissioned_at / created_at / updated_at","2026-06-13","OLD","bind ts"],
+   ["csp_never_had_custody / connection_deactivated / carry_fee_active","false","CONST","default"],
+   ["idle_days / carry_fee_accrual_units / version","0 / 0 / 1","CONST","default"],
+   ["correlation_id / causation_id","csp-migration-<batch>","MINT",""],
+   ["idle_start_date / retrieval_* / condition_* / total_liability / last_connection_id / recovery_* / lost_reason / dispatched_at / last_accrual_date","NULL","NULL",""]
+  ]
+ }
+},
+{
+ id:"tech", title:"Technician assigned (pre-arrival)", key:"connection PENDING_INSTALL",
+ rule:"ASSIGNEE + ASSIGNED_TIME set, COMPLETED_STEP=0 (technician assigned, not yet on-site). Old-world 'assigned' (rohit set) = new TECHNICIAN_ASSIGNED.",
+ old:[
+  {t:"TASKS · INSTALLATION", rows:[["STATUS","1"],["COMPLETED_STEP","0"],["ASSIGNEE","set (rohit)"],["ASSIGNED_TIME","set"],["SLOT_TIME","set"]]},
+  {t:"BOOKING (by TASK_ID)", rows:[["ACCOUNT_ID","→ customer_id"],["SD_TXN_ID","→ security_fee"]]}
+ ],
+ neu:{
+  connections:[["current_state","PENDING_INSTALL","CASE","after acceptance"],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],["plan_id","22","CONST",""],["csp_id","⚠ resolver","LOOKUP","P1"]],
+  alloc:[["allocation_state","ACCEPTED","CASE","CSP accepted; not yet ACTIVE"],["acceptance_timestamp","← notif-to-partner","OLD",""]],
+  cand:[["current_state","TECHNICIAN_ASSIGNED","CASE","rohit assigned"],["task_status","OPEN","CASE",""],["completed_step","0","OLD",""],["executor_id","⚠ resolver","LOOKUP","ASSIGNEE → csp_user (P2)"]],
+  stephist:null, translog:null, custody:null
+ }
+},
+{
+ id:"installed", title:"Installed → active (terminal success)", key:"connection ACTIVE",
+ rule:"STATUS=2, COMPLETED_STEP=8 (RATING done) → install complete. CUSTOMER_INSTALLATION_CONFIRMED fires: connection ACTIVE, allocation ACTIVE, candidate CONNECTION_ACTIVE.",
+ old:[
+  {t:"TASKS · INSTALLATION", rows:[["STATUS","2 (completed)"],["COMPLETED_STEP","8"],["RATING_DONE","true"]]},
+  {t:"BOOKING", rows:[["BOOKING_STATE","INSTALLED / ACTIVE"],["DEVICE_ID","→ netbox_custody DEPLOYED"]]}
+ ],
+ neu:{
+  connections:[["current_state","ACTIVE","CASE","CUSTOMER_INSTALLATION_CONFIRMED"],["activated_at","← completion ts","OLD",""],["installation_complete_at","← completion ts","OLD",""]],
+  alloc:[["allocation_state","ACTIVE","CASE","ACCEPTED→ACTIVE at CL_CONNECTION_ACTIVATED"]],
+  cand:[["current_state","CONNECTION_ACTIVE","CASE","terminal"],["task_status","COMPLETED","CASE",""],["completed_step","8","OLD",""],["customer_rating","← RATING task","OLD",""]],
+  stephist:null, translog:null,
+  custody:[["status","DEPLOYED","CASE",""],["device_id","← BOOKING.DEVICE_ID","OLD",""],["was_ever_deployed","true","RULE",""]]
+ }
+},
+{
+ id:"failed", title:"Failed / declined (terminal — largest bucket)", key:"connection PENDING_DEACTIVATION",
+ rule:"STATUS=-1 (REMARKS 'Partner Declined Post assigning'). Prod: 655 of 1019 candidates — dominant outcome connection PENDING_DEACTIVATION (412); retry → REQUESTED/PENDING_INSTALL is the minority (~13%).",
+ old:[
+  {t:"TASKS · INSTALLATION", rows:[["STATUS","-1 (declined)"],["REMARKS","Partner Declined Post assigning"],["REMARK_TYPE","reason text"]]},
+  {t:"BOOKING", rows:[["BOOKING_STATE","cancelled / failed"]]}
+ ],
+ neu:{
+  connections:[["current_state","PENDING_DEACTIVATION (dom.) / REQUESTED (retry) / PENDING_INSTALL (awaiting retry)","CASE","by retry_count vs exhaustion (T3/T12)"],["retry_count","← TASKS","OLD",""]],
+  alloc:[["allocation_state","REALLOCATION_PENDING / RELEASED","CASE",""]],
+  cand:[["current_state","INSTALLATION_REPORTED_FAILED","CASE","terminal"],["task_status","CANCELLED","CASE",""],["failure_reason","← REMARKS / REMARK_TYPE","OLD",""]],
+  stephist:null, translog:null, custody:null
+ }
+}
+];
+
+// ===================== render =====================
+function oldCard(c){
+  if(c.absent) return `<div class="card absent"><h3>${esc(c.t)}</h3>${c.note?`<div class="cnote">${esc(c.note)}</div>`:''}<div class="why">${esc(c.absent)}</div></div>`;
+  const rows=c.rows.map(r=>`<tr><td class="f">${esc(r[0])}</td><td class="v" colspan="2">${esc(r[1])}</td></tr>`).join("");
+  return `<div class="card"><h3>${esc(c.t)}</h3>${c.note?`<div class="cnote">${esc(c.note)}</div>`:''}<table>${rows}</table></div>`;
+}
+function newCard(key,data){
+  const m=NEWMETA[key];
+  if(!data) return `<div class="card absent"><h3>${m.label} <span class="svc">— ${m.svc}</span></h3><div class="why">${esc(ABSENT_WHY[key]||"No row in this case")}</div></div>`;
+  const rows=data.map(r=>`<tr class="t-${r[2]}"><td class="f">${esc(r[0])}</td><td class="v">${esc(r[1])}</td><td class="s"><span class="chip ${r[2]}">${r[2]}</span> ${esc(r[3]||"")}</td></tr>`).join("");
+  return `<div class="card"><h3>${m.label} <span class="svc">— ${m.svc}</span></h3><table>${rows}</table></div>`;
+}
+const tabsEl=document.getElementById("tabs"), subTabsEl=document.getElementById("subtabs"), panesEl=document.getElementById("panes");
+const RIGHT=["connections","alloc","cand","stephist","translog","custody"];
+
+// ---- Approach pane ----
+(function(){
+  const pane=document.createElement("div");pane.className="casepane";pane.id="pane_approach";
+  pane.innerHTML=`
+  <div class="banner" style="border-left-color:#5b2d91"><b>CSP Installation Migration — How this works</b><div class="rule">Same method as the ISP-Recharge migration template, applied to the Installation workflow. A live install in the old DynamoDB world (a TASKS task-tree + a BOOKING row) is re-projected into the new CSP-OS tables across 5 services. Every NEW column carries a provenance chip back to an OLD source, a resolver, or a PM rule.</div></div>
+  <div class="flow3">
+    <div class="step now"><div class="n">1</div><div class="t">PRODUCT</div><div class="d">Defines logic per entity.<br>Every NEW column &larr; OLD source (TASKS / BOOKING).<br>Derivations = PM-defined, never inferred.</div><div class="tag">CURRENT PHASE</div></div>
+    <div class="arr">&rarr;</div>
+    <div class="step"><div class="n">2</div><div class="t">ANALYTICS</div><div class="d">Verifies mapping vs actual data: sources, derivations, populations, edge cases.</div></div>
+    <div class="arr">&rarr;</div>
+    <div class="step"><div class="n">3</div><div class="t">TECH</div><div class="d">Implements the migration (Flyway + seeders).</div></div>
+  </div>
+  <div class="side-title" style="margin-top:20px">OLD-WORLD SOURCES (2)</div>
+  <div class="flow6" style="grid-template-columns:repeat(2,1fr)">
+    <div class="m"><b>DYNAMODB.TASKS</b><span>Task tree + install <b>state/progress</b>: LEAD_ALLOCATION (allocation), INSTALLATION (parent), child step-tasks. Keys: ID, PARENT_ID.</span></div>
+    <div class="m"><b>DYNAMODB.BOOKING</b><span>Customer <b>identity + booking data</b>: ACCOUNT_ID (customer_id), NAME, ADDRESS, AADHAR_*_URL, SD (security deposit), DEVICE. Key: TASK_ID.</span></div>
+  </div>
+  <div class="side-title" style="margin-top:18px">JOIN</div>
+  <div class="readhint"><div><code>INSTALLATION.ID = BOOKING.TASK_ID</code></div><div class="arr">&rarr;</div><div>BOOKING.ACCOUNT_ID = <b>customer_id</b>. (TASKS.CUSTOMER_ID is 0 — unusable; mobile is PII-masked.)</div></div>
+  <div class="side-title" style="margin-top:18px">TARGET TABLES (5 services)</div>
+  <div class="flow6" style="grid-template-columns:repeat(3,1fr)">
+    <div class="m"><b>connections</b><span>CLOS — lifecycle (REQUESTED→PENDING_INSTALL→ACTIVE). The spine.</span></div>
+    <div class="m"><b>connection_allocations</b><span>D&amp;A — allocation state (ASSIGNED→ACCEPTED→ACTIVE).</span></div>
+    <div class="m"><b>install_execution_candidates</b><span>TAS — the 20-state install machine.</span></div>
+    <div class="m"><b>installation_step_history</b><span>TAS — per-step audit (backfill from child step-tasks).</span></div>
+    <div class="m"><b>netbox_custody</b><span>ACS — device custody (DEPLOYED on bind).</span></div>
+    <div class="m"><b>customer_access_states</b><span style="color:#b25b00">CAEOS — NOT migrated; auto-created at activation.</span></div>
+  </div>
+  <div class="side-title" style="margin-top:18px">HOW TO READ A CASE TAB</div>
+  <div class="readhint">
+    <div><span style="color:#0a7a3d;font-weight:800">LEFT</span> = OLD world (TASKS + BOOKING source rows)</div>
+    <div class="arr">&rarr;</div>
+    <div><span style="color:#5b2d91;font-weight:800">RIGHT</span> = NEW world (post-migration rows; every value carries a provenance chip)</div>
+    <div style="color:#b25b00">&#9888; amber = blocked on a prerequisite / open question</div>
+  </div>`;
+  panesEl.appendChild(pane);
+})();
+
+// ---- Prerequisites pane ----
+(function(){
+  const PRE=[
+   ["P1 · partner_id &rarr; csp_id","csp_gateway.csp_account.partner_id &rarr; csp_id. Sparse today (105/106). Partners must be onboarded before their installs can be migrated.","k1"],
+   ["P2 · rohit &rarr; executor_id","csp_gateway.csp_user.legacy_user_id &rarr; csp_user.id. Sparse (271/426). Technicians must be onboarded.","k1"],
+   ["P3 · Zone polygons","csp_capacity_coverage.zones.boundary_polygon — point-in-polygon resolve(lat,lng). 6,591 seeded. No nearest fallback &rarr; OUT_OF_COVERAGE if outside all polygons.","kb"],
+   ["P4 · CSP zone eligibility","csp_capacity_coverage.csp_zone_eligibility (csp_id, zone_id) must exist for the resolved pair, else seed it. A CSP is multi-zone (up to 19).","kb"],
+   ["P5 · Image object-store copy","Old keys are mobile-namespaced (e.g. 9354077816/AADHAR_FRONT). New ImageStorage uses its own bucket &rarr; physical copy needed, not a string copy.","kb"]
+  ];
+  const pane=document.createElement("div");pane.className="casepane";pane.id="pane_prereq";
+  pane.innerHTML=`
+   <div class="banner" style="border-left-color:#16243a"><b>Prerequisites — must exist before migration runs</b>
+     <div class="rule" style="margin-top:6px">Purple = onboarding (creates the ids every table looks up; this is why csp_id / executor_id show as blocked in the case views). Amber = capacity-coverage / asset setup.</div>
+   </div>
+   <div class="seqwrap">${PRE.map((s,i)=>`<div class="seqrow ${s[2]||''}"><div class="sn">${i+1}</div><div><div class="st">${s[0]}</div><div class="ss">${s[1]}</div></div></div>`).join("")}</div>`;
+  panesEl.appendChild(pane);
+})();
+
+// ---- Case Menu pane (static 15) ----
+(function(){
+  const MENU=[
+   ["1","Allocated, not accepted","LEAD_ALLOCATION assigned; no INSTALLATION task","(none)","REQUESTED","ASSIGNED","live"],
+   ["2","Accepted, awaiting slot","INSTALLATION open; no PROPOSED_SLOT","AWAITING_SLOT_PROPOSAL","PENDING_INSTALL","ACCEPTED","live"],
+   ["3","Slot proposed","PARTNER_SLOT_PROPOSED_AT set; no CUSTOMER_CONFIRMED_TIME","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","ACCEPTED","live"],
+   ["4","Slot confirmed / auto","CUSTOMER_CONFIRMED_TIME set / auto","SLOT_CONFIRMED_BY_CUSTOMER / SLOT_AUTO_CONFIRMED","PENDING_INSTALL","ACCEPTED","live"],
+   ["5","Awaiting technician","slot confirmed; no ASSIGNEE","AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","ACCEPTED","live"],
+   ["6","Technician assigned","ASSIGNEE + ASSIGNED_TIME; COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","ACCEPTED","live"],
+   ["7","On-site, pre-fee","COMPLETED_STEP=1 (SELFIE)","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","ACCEPTED","live"],
+   ["8","Fee collection pending","COMPLETED_STEP=2 (AADHAR)","FEE_COLLECTION_PENDING","PENDING_INSTALL","ACCEPTED","live"],
+   ["9","On-site, post-fee ⭐","COMPLETED_STEP=3/4/5 (SHARED/CONNECTION_INFO/DEVICE_PHOTO)","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","ACCEPTED","live"],
+   ["10","Awaiting OTP","COMPLETED_STEP=6 (SPEED_TEST done)","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","ACCEPTED","live"],
+   ["11","Rating pending","COMPLETED_STEP=7 (OTP done)","RATING_PENDING","PENDING_INSTALL","ACCEPTED","live"],
+   ["12","Installed → active","STATUS=2; COMPLETED_STEP=8","CONNECTION_ACTIVE","ACTIVE","ACTIVE","term"],
+   ["13","Failed / declined","STATUS=-1 (Partner Declined)","INSTALLATION_REPORTED_FAILED","PENDING_DEACTIVATION / REQUESTED","REALLOCATION_PENDING","term"],
+   ["14","Cancelled upstream / by customer","reassigned / IS_AUTO_DECLINED / customer cancel","CANCELLED_BY_UPSTREAM / CANCELLED_BY_CUSTOMER","PENDING_DEACTIVATION","REALLOCATION_PENDING / RELEASED","term"],
+   ["15","Expired","INSTALLATION open >90d, no progress","INSTALLATION_EXPIRED","REQUESTED / PENDING_INSTALL","RELEASED","term"]
+  ];
+  const pane=document.createElement("div");pane.className="casepane";pane.id="pane_menu";
+  pane.innerHTML=`
+   <div class="banner"><b>Case menu — 15 install archetypes</b><div class="rule">Every old-world install collapses into one of these by where it sits in the 20-state machine (read off TASKS columns). Case 9 (⭐) is fully column-mapped in the <b>Worked example</b> tab. Green border = live in-flight; amber = terminal. allocation = the live OPEN value (ACCEPTED through the whole install; ACTIVE only at completion).</div></div>
+   <table class="menu"><thead><tr><th>#</th><th>Case</th><th>Old TASKS signature</th><th>install_execution_candidate state</th><th>connection</th><th>allocation</th></tr></thead>
+   <tbody>${MENU.map(m=>`<tr class="${m[6]}"><td><b>${m[0]}</b></td><td>${m[1]}</td><td><code>${m[2]}</code></td><td><b>${m[3]}</b></td><td>${m[4]}</td><td>${m[5]}</td></tr>`).join("")}</tbody></table>
+   <div class="warn" style="margin-top:14px"><b>Note:</b> the three populations to handle — (a) small live in-flight set (cases 1–11, mint candidate), (b) the large already-installed backbone (case 12, connection only, often no install candidate), and (c) the failed/cancelled tail (cases 13–15). customer_access_states is never migrated (auto at activation).</div>`;
+  panesEl.appendChild(pane);
+})();
+
+// ---- Worked-example workflow (cases) ----
+function buildCasePane(cs){
+  const pane=document.createElement("div");pane.className="casepane";pane.id=`pane_wx_${cs.id}`;
+  pane.innerHTML=`
+    <div class="banner"><b>${cs.title}</b> &nbsp;·&nbsp; <code>${cs.key}</code><div class="rule">${cs.rule}</div></div>
+    ${cs.hi?`<div class="hilite">${cs.hi}</div>`:""}
+    ${cs.warn?`<div class="warn">${cs.warn}</div>`:""}
+    <div class="cols">
+      <div><div class="side-title">OLD WORLD — source rows (DynamoDB TASKS + BOOKING)</div>${cs.old.map(oldCard).join("")}</div>
+      <div><div class="side-title newW">NEW WORLD — post-migration rows (CSP-OS)</div>${RIGHT.map(k=>newCard(k,cs.neu[k])).join("")}</div>
+    </div>`;
+  panesEl.appendChild(pane);
+}
+CASES.forEach(buildCasePane);
+
+// ---- nav ----
+function showPane(id){document.querySelectorAll(".casepane").forEach(p=>p.classList.remove("active"));const el=document.getElementById(id);if(el)el.classList.add("active");}
+function setTop(k){document.querySelectorAll(".toptab").forEach(t=>t.classList.toggle("active",t.dataset.k===k));}
+function showStatic(k,paneId){setTop(k);subTabsEl.style.display="none";showPane(paneId);}
+function showWorked(){
+  setTop("wx");
+  subTabsEl.style.display="flex";subTabsEl.innerHTML=`<span class="wflabel">INSTALLATION — pick a case:</span>`;
+  CASES.forEach((cs,i)=>{
+    const b=document.createElement("button");b.className="subtab"+(i===0?" active":"");b.innerHTML=cs.title;
+    b.onclick=()=>{document.querySelectorAll(".subtab").forEach(t=>t.classList.remove("active"));b.classList.add("active");showPane(`pane_wx_${cs.id}`);};
+    subTabsEl.appendChild(b);
+  });
+  showPane(`pane_wx_${CASES[0].id}`);
+}
+[["approach","Approach & Process"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (15)"]].forEach(([k,lbl])=>{
+  const b=document.createElement("button");b.className="toptab";b.dataset.k=k;b.textContent=lbl;
+  b.onclick=()=> k==="approach"?showStatic("approach","pane_approach"):k==="prereq"?showStatic("prereq","pane_prereq"):k==="menu"?showStatic("menu","pane_menu"):showWorked();
+  tabsEl.appendChild(b);
+});
+showStatic("approach","pane_approach");
+</script>
+</body>
+</html>
