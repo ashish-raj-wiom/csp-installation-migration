@@ -142,26 +142,17 @@ const ABSENT_WHY = {
 // ===================== INSTALLATION WORKFLOW =====================
 const CASES = [
 {
- id:"c1", title:"Case 1 · Allocated, not accepted", key:"LEAD_ALLOCATION 1781357365316487 · customer 281749855088235 (golu)",
- rule:"Booking offered, no CSP acceptance yet and no INSTALLATION task. Connection sits at REQUESTED — no install candidate is created until ALLOCATION_ACCEPTED. Boundary case: nothing on the install side to migrate yet.",
+ id:"c1", title:"Case 1 · Notified (partner yet to accept)", key:"LEAD_ALLOCATION 1781438377644204 · partner 274877926104",
+ rule:"Booking notified to a CSP but no acceptance yet (lead NOTIF_SENT, status=0). No single accepted CSP → migrate connection + allocation only, NO install candidate (it is created on acceptance). New-world D&A re-drives assignment from here.",
  old:[
-  {t:"TASKS · LEAD_ALLOCATION (1781357365316487)", rows:[["TYPE","LEAD_ALLOCATION"],["STATUS","0 (not accepted)"],["INTEREST_STATUS","(none)"],["PARTNER_ID","0 (no CSP accepted)"],["slot fields","none"]]},
-  {t:"BOOKING (TASK_ID 1781357365316487)", rows:[["ACCOUNT_ID","281749855088235  →  customer_id"],["NAME","golu"],["BOOKING_STATE","ADDRESS_VERIFIED"],["SD_AMOUNT","300"],["LAT / LNG","27.5151 / 77.7027  (⚠ far point — OUT_OF_COVERAGE risk)"]]}
- ],
- p:{connState:"REQUESTED", connStateNote:"no acceptance yet (T1 not fired)", customerId:"281749855088235", customerName:"golu", partnerId:"(none — no CSP accepted)", lat:"27.5151", lng:"77.7027", zoneWarn:"OUT_OF_COVERAGE risk", allocState:"ASSIGNED / UNASSIGNED", allocNote:"notified, not accepted", hasCand:false, hasCustody:false}
-},
-{
- id:"c2", title:"Case 2 · Assigned CSP, awaiting slot", key:"LEAD_ALLOCATION 1781358596912154 · partner 281749854665053",
- rule:"New-world D&A assigns the booking directly to ONE CSP (INTEREST_STATUS=NOTIF_SENT — the single notified/assigned partner). No slot proposed yet → install candidate AWAITING_SLOT_PROPOSAL. LATE_INTERESTED also-ran rows are NOT migrated (see scope note).",
- old:[
-  {t:"TASKS · LEAD_ALLOCATION (1781358596912154)", rows:[["INTEREST_STATUS","NOTIF_SENT (single assigned CSP)"],["PARTNER_ID","281749854665053"],["PARTNER_SLOT_PROPOSED_AT","(none)"],["CUSTOMER_CONFIRMED_TIME","(none)"],["migration note","only the assigned CSP migrates — no LATE_INTERESTED rows"]]},
+  {t:"TASKS · LEAD_ALLOCATION (1781438377644204)", rows:[["TYPE","LEAD_ALLOCATION"],["INTEREST_STATUS","NOTIF_SENT"],["STATUS","0 (TODO / pending)"],["PARTNER_ID","274877926104 (notified, not accepted)"],["note","one row per notified partner — fan-out; no winner yet"]]},
   {t:"BOOKING (via booking-root TASK_ID)", rows:[["ACCOUNT_ID","→ customer_id"],["SD_AMOUNT","300"]]}
  ],
- p:{connState:"PENDING_INSTALL", partnerId:"281749854665053", allocState:"ACCEPTED", allocNote:"single assigned CSP", candState:"AWAITING_SLOT_PROPOSAL", candNote:"no slot proposed", completedStep:"0", completedStepN:0, hasCustody:false}
+ p:{connState:"REQUESTED", connStateNote:"no acceptance yet (T1 fires on ALLOCATION_ACCEPTED)", partnerId:"274877926104", allocState:"ASSIGNED / UNASSIGNED", allocNote:"notified; D&A re-drives acceptance", hasCand:false, hasCustody:false}
 },
 {
- id:"c3", title:"Case 3 · Slot proposed, awaiting customer", key:"LEAD_ALLOCATION 1781351306412735 · partner 281749854647629",
- rule:"Partner proposed a slot (PARTNER_SLOT_PROPOSED_AT set, INTEREST_STATUS=CUSTOMER_AWAITING); customer not confirmed → AWAITING_CUSTOMER_SLOT_CONFIRMATION.",
+ id:"c2", title:"Case 2 · Slot Selected (partner proposed)", key:"LEAD_ALLOCATION 1781351306412735 · partner 281749854647629",
+ rule:"Accepted CSP proposed a slot (lead CUSTOMER_AWAITING, PARTNER_SLOT_PROPOSED_AT set); customer not confirmed → AWAITING_CUSTOMER_SLOT_CONFIRMATION.",
  old:[
   {t:"TASKS · LEAD_ALLOCATION (1781351306412735)", rows:[["INTEREST_STATUS","CUSTOMER_AWAITING"],["PARTNER_SLOT_PROPOSED_AT","2026-06-13T11:28:36"],["PROPOSED_SLOT_TIME","2026-06-14"],["CUSTOMER_CONFIRMED_TIME","(none)"],["PARTNER_ID","281749854647629"]]},
   {t:"BOOKING (via booking-root TASK_ID)", rows:[["ACCOUNT_ID","→ customer_id"]]}
@@ -169,105 +160,49 @@ const CASES = [
  p:{connState:"PENDING_INSTALL", partnerId:"281749854647629", allocState:"ACCEPTED", candState:"AWAITING_CUSTOMER_SLOT_CONFIRMATION", candNote:"slot proposed, awaiting customer", completedStep:"0", completedStepN:0, proposedDate:"2026-06-14", hasCustody:false}
 },
 {
- id:"c4", title:"Case 4 · Slot confirmed by customer", key:"LEAD_ALLOCATION 1781357443367529 · partner 281749854822481",
- rule:"Customer confirmed the slot (CUSTOMER_CONFIRMED_TIME set) → SLOT_CONFIRMED_BY_CUSTOMER. Transient — auto-advances to AWAITING_TECHNICIAN_ASSIGNMENT (Case 5).",
+ id:"c3", title:"Case 3 · Slot Confirmed (by customer)", key:"LEAD_ALLOCATION 1781357443367529 · partner 281749854822481",
+ rule:"Customer confirmed the slot (lead CUSTOMER_CONFIRMED, CUSTOMER_CONFIRMED_TIME set), no technician yet → AWAITING_TECHNICIAN_ASSIGNMENT.",
  old:[
   {t:"TASKS · LEAD_ALLOCATION (1781357443367529)", rows:[["INTEREST_STATUS","CUSTOMER_CONFIRMED"],["PROPOSED_SLOT_TIME","2026-06-14"],["CUSTOMER_CONFIRMED_TIME","2026-06-13T13:00:33"],["ASSIGNEE","(none yet)"],["PARTNER_ID","281749854822481"]]},
   {t:"BOOKING", rows:[["BOOKING_STATE","SLOT_CONFIRMED_BY_CUSTOMER"],["ACCOUNT_ID","→ customer_id"]]}
  ],
- p:{connState:"PENDING_INSTALL", partnerId:"281749854822481", allocState:"ACCEPTED", candState:"SLOT_CONFIRMED_BY_CUSTOMER", candNote:"customer confirmed", completedStep:"0", completedStepN:0, proposedDate:"2026-06-14", confirmedAt:"2026-06-13T13:00:33", slotSource:"CUSTOMER", slotDate:"2026-06-14", hasCustody:false}
+ p:{connState:"PENDING_INSTALL", partnerId:"281749854822481", allocState:"ACCEPTED", candState:"AWAITING_TECHNICIAN_ASSIGNMENT", candNote:"confirmed, no rohit", completedStep:"0", completedStepN:0, confirmedAt:"2026-06-13T13:00:33", slotSource:"CUSTOMER", slotDate:"2026-06-14", hasCustody:false}
 },
 {
- id:"c5", title:"Case 5 · Awaiting technician assignment", key:"resting state after Case 4 auto-advance",
- rule:"Same old-world signature as Case 4 (slot confirmed, no ASSIGNEE). The machine auto-advances SLOT_CONFIRMED_BY_CUSTOMER → AWAITING_TECHNICIAN_ASSIGNMENT, so this is the resting state for a confirmed booking with no rohit assigned.",
+ id:"c4", title:"Case 4 · Technician Assigned (on-site, pre-payment)", key:"INSTALLATION 1781357022187226 · customer 281749855087407 (pradeep Kumar)",
+ rule:"Technician assigned / on-site, security deposit not yet paid — Selfie/Aadhar collapse here. Representative completed_step=0 → TECHNICIAN_ASSIGNED.",
  old:[
-  {t:"TASKS · LEAD_ALLOCATION", rows:[["CUSTOMER_CONFIRMED_TIME","set (slot confirmed)"],["ASSIGNEE","(none — no rohit yet)"],["INTEREST_STATUS","CUSTOMER_CONFIRMED"]]},
-  {t:"BOOKING", rows:[["BOOKING_STATE","SLOT_CONFIRMED_BY_CUSTOMER"],["ACCOUNT_ID","→ customer_id"]]}
+  {t:"TASKS · INSTALLATION (1781357022187226)", rows:[["STATUS","1 (open)"],["COMPLETED_STEP","0"],["ASSIGNEE","281612415857384 (Rajesh Kumar)"],["ASSIGNED_TIME","2026-06-13T12:56:29"],["SLOT_TIME","2026-06-13"],["PARTNER_ID","281749854803110"]]},
+  {t:"BOOKING (TASK_ID 1781357022187226)", rows:[["ACCOUNT_ID","281749855087407  →  customer_id"],["NAME","pradeep Kumar"],["BOOKING_STATE","ROHIT_ASSIGNED"],["SD_TXN_ID","(null — fee not paid)"],["LAT / LNG","28.6613 / 77.1360"]]}
  ],
- p:{connState:"PENDING_INSTALL", partnerId:"(assigned CSP)", allocState:"ACCEPTED", candState:"AWAITING_TECHNICIAN_ASSIGNMENT", candNote:"confirmed, no rohit", noExecutor:true, completedStep:"0", completedStepN:0, confirmedAt:"(confirmed)", slotSource:"CUSTOMER", hasCustody:false}
+ p:{connState:"PENDING_INSTALL", customerId:"281749855087407", customerName:"pradeep Kumar", partnerId:"281749854803110", assignee:"281612415857384", lat:"28.6613", lng:"77.1360", allocState:"ACCEPTED", candState:"TECHNICIAN_ASSIGNED", candNote:"on-site pre-payment (collapsed)", completedStep:"0", completedStepN:0, slotDate:"2026-06-13", assignedTs:"2026-06-13T12:56:29", feeStatus:"NOT_APPLICABLE", hasCustody:false}
 },
 {
- id:"c6", title:"Case 6 · Technician assigned (pre-arrival)", key:"INSTALLATION 1781357022187226 · customer 281749855087407 (pradeep Kumar)",
- rule:"ASSIGNEE set (Rajesh Kumar) + ASSIGNED_TIME, COMPLETED_STEP=0 — technician assigned, not yet on-site. Old-world 'assigned' (rohit) = new TECHNICIAN_ASSIGNED.",
+ id:"c5", title:"Case 5 · Payment Done (deposit paid)", key:"INSTALLATION 1781353222603271 · customer 281749855088198 (Harsh)",
+ rule:"₹300 security deposit paid (BOOKING.SD_TXN_ID set) — between Aadhar and Shared. Representative completed_step=3 → INSTALLATION_IN_PROGRESS_POST_FEE, security_fee_status=PAID.",
  old:[
-  {t:"TASKS · INSTALLATION (1781357022187226)", rows:[["STATUS","1"],["COMPLETED_STEP","0"],["ASSIGNEE","281612415857384 (Rajesh Kumar)"],["ASSIGNED_TIME","2026-06-13T12:56:29"],["SLOT_TIME","2026-06-13"],["PARTNER_ID","281749854803110"]]},
-  {t:"BOOKING (TASK_ID 1781357022187226)", rows:[["ACCOUNT_ID","281749855087407  →  customer_id"],["NAME","pradeep Kumar"],["BOOKING_STATE","ROHIT_ASSIGNED"],["SD_AMOUNT","300"],["LAT / LNG","28.6613 / 77.1360"]]}
+  {t:"TASKS · INSTALLATION (1781353222603271)", rows:[["STATUS","1"],["COMPLETED_STEP","3 (Shared done)"],["ASSIGNEE","281612415877754 (Dharmender)"],["PARTNER_ID","281749854822881"]]},
+  {t:"BOOKING (TASK_ID 1781353222603271)", rows:[["ACCOUNT_ID","281749855088198  →  customer_id"],["NAME","Harsh"],["BOOKING_STATE","ROHIT_ARRIVED"],["SD_TXN_ID","custGen_9891397955_203588358_1 (PAID)"],["SD_AMOUNT","300"],["LAT / LNG","28.6604 / 77.0606"]]}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855087407", customerName:"pradeep Kumar", partnerId:"281749854803110", assignee:"281612415857384", lat:"28.6613", lng:"77.1360", allocState:"ACCEPTED", candState:"TECHNICIAN_ASSIGNED", candNote:"rohit assigned (Rajesh Kumar)", completedStep:"0", completedStepN:0, slotDate:"2026-06-13", assignedTs:"2026-06-13T12:56:29", hasCustody:false}
+ p:{connState:"PENDING_INSTALL", customerId:"281749855088198", customerName:"Harsh", partnerId:"281749854822881", assignee:"281612415877754", lat:"28.6604", lng:"77.0606", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_POST_FEE", candNote:"deposit paid (SD_TXN_ID set)", completedStep:"3", completedStepN:3, feeStatus:"PAID", feeTxn:"custGen_9891397955_203588358_1", steps:["SELFIE","AADHAR","SHARED"], hasCustody:false}
 },
 {
- id:"c7", title:"Case 7 · On-site, in progress (pre-fee)", key:"INSTALLATION 1781243598246589 · customer 281749855087404 (irfan saifi)",
- rule:"COMPLETED_STEP=1 (SELFIE done), technician Pinki Rani on-site → INSTALLATION_IN_PROGRESS_PRE_FEE.",
+ id:"c6", title:"Case 6 · Device ID linked (CONNECTION_INFO)", key:"INSTALLATION 1781335322392052 · customer 281749855088053 (sumit)",
+ rule:"Device scanned + linked at CONNECTION_INFO (step 4); network/optical captured. completed_step=4 → INSTALLATION_IN_PROGRESS_POST_FEE with device_id populated.",
  old:[
-  {t:"TASKS · INSTALLATION (1781243598246589)", rows:[["STATUS","1"],["COMPLETED_STEP","1 (SELFIE done)"],["ASSIGNEE","281612415747766 (Pinki Rani)"],["IS_CALLED","true"],["SLOT_TIME","2026-06-12"],["PARTNER_ID","281749854698043"]]},
-  {t:"BOOKING (TASK_ID 1781243598246589)", rows:[["ACCOUNT_ID","281749855087404  →  customer_id"],["NAME","irfan saifi"],["BOOKING_STATE","ROHIT_ARRIVED"],["SD_TXN_ID","custGen_8287275243_203479408_0 (PAID)"],["LAT / LNG","28.7289 / 77.2167"]]}
+  {t:"TASKS · INSTALLATION (1781335322392052)", rows:[["STATUS","1"],["COMPLETED_STEP","4 (CONNECTION_INFO done)"],["ASSIGNEE","281612415879954 (Gulshan)"],["PARTNER_ID","281749854824813"],["EXTRA_DATA.deviceId","GX153715"],["EXTRA_DATA.opticalPower","-20.97"],["EXTRA_DATA.ssid","sumit_7816"]]},
+  {t:"BOOKING (TASK_ID 1781335322392052)", rows:[["ACCOUNT_ID","281749855088053  →  customer_id"],["NAME","sumit"],["SD_TXN_ID","custGen_9354077816_203507326_1 (PAID)"],["AADHAR_FRONT_URL","9354077816/AADHAR_FRONT"],["LAT / LNG","28.5380 / 77.2306"]]}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855087404", customerName:"irfan saifi", partnerId:"281749854698043", assignee:"281612415747766", lat:"28.7289", lng:"77.2167", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_PRE_FEE", candNote:"COMPLETED_STEP=1 (SELFIE done)", completedStep:"1", completedStepN:1, calls:"≥1", feeStatus:"PAID", feeTxn:"custGen_8287275243_203479408_0", slotDate:"2026-06-12", steps:["SELFIE"], hasCustody:false}
+ p:{connState:"PENDING_INSTALL", customerId:"281749855088053", customerName:"sumit", partnerId:"281749854824813", assignee:"281612415879954", lat:"28.5380", lng:"77.2306", address:"{home:551 B, locality:Chirag Dilli 110017, city:New Delhi}::jsonb", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_POST_FEE", candNote:"device linked at CONNECTION_INFO", completedStep:"4", completedStepN:4, feeStatus:"PAID", feeTxn:"custGen_9354077816_203507326_1", deviceId:"GX153715", ssid:"sumit_7816", optical:"-20.97", extraData:"{aadhar_front:9354077816/AADHAR_FRONT, aadhar_back:9354077816/AADHAR_BACK}", confirmedAt:"2026-06-13T06:48:19Z", slotSource:"CUSTOMER", slotDate:"2026-06-14", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO"], hasCustody:false}
 },
 {
- id:"c8", title:"Case 8 · On-site, fee collection pending", key:"INSTALLATION 1781181826544679 · customer 281749855087241 (Aashish Sharma)",
- rule:"Technician on-site (ROHIT_ARRIVED), COMPLETED_STEP=2 (AADHAR done), but the ₹300 security deposit is NOT yet collected (SD_TXN_ID null) → FEE_COLLECTION_PENDING. The deposit is collected ON-SITE here, between AADHAR and SHARED (SHARED is gated on payment). Verified: SD_TXN_ID is 0% populated until ROHIT_ARRIVED, then 94% — i.e. collected on-site, not at booking.",
+ id:"c7", title:"Case 7 · Speed Test (awaiting OTP)", key:"INSTALLATION 1781350265664490 · customer 281749855088200 (rani)",
+ rule:"Speed test submitted (completed_step=6); customer OTP next → AWAITING_CUSTOMER_OTP. (OTP step 7 closes the old task → out of scope.)",
  old:[
-  {t:"TASKS · INSTALLATION (1781181826544679)", rows:[["STATUS","1"],["COMPLETED_STEP","2 (AADHAR done)"],["ASSIGNEE","281612415917882 (pradum)"],["SLOT_TIME","2026-06-12"],["PARTNER_ID","281749854781744"]]},
-  {t:"BOOKING (TASK_ID 1781181826544679)", rows:[["ACCOUNT_ID","281749855087241  →  customer_id"],["NAME","Aashish Sharma"],["BOOKING_STATE","ROHIT_ARRIVED (on-site)"],["SD_TXN_ID","NULL  ⚠ deposit not yet paid → FEE_COLLECTION_PENDING"],["SD_AMOUNT","300"],["LAT / LNG","19.0439 / 73.0193"]]}
+  {t:"TASKS · INSTALLATION (1781350265664490)", rows:[["STATUS","1"],["COMPLETED_STEP","6 (SPEED_TEST done)"],["ASSIGNEE","137438996037 (RKCABLE)"],["PARTNER_ID","274877928231"]]},
+  {t:"BOOKING (TASK_ID 1781350265664490)", rows:[["ACCOUNT_ID","281749855088200  →  customer_id"],["NAME","rani"],["SD_TXN_ID","custGen_6367244420_203513526_0 (PAID)"],["AADHAR_FRONT_URL","6367244420/AADHAR_FRONT"],["LAT / LNG","28.5966 / 77.0769"]]}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855087241", customerName:"Aashish Sharma", partnerId:"281749854781744", assignee:"281612415917882", lat:"19.0439", lng:"73.0193", allocState:"ACCEPTED", candState:"FEE_COLLECTION_PENDING", candNote:"on-site; ₹300 deposit not yet paid (SD_TXN_ID null)", completedStep:"2", completedStepN:2, feeStatus:"PENDING", slotDate:"2026-06-12", steps:["SELFIE","AADHAR"], hasCustody:false}
-},
-{
- id:"sumit", title:"Case 9 · On-site, post-fee — ⭐ fully mapped (sumit)", key:"TASK_ID 1781335322392052 · customer 281749855088053",
- rule:"LEAD_ALLOCATION accepted (STATUS=2) · technician Gulshan assigned · customer confirmed slot · INSTALLATION open (STATUS=1) at COMPLETED_STEP=4 (CONNECTION_INFO done) → connection PENDING_INSTALL, allocation ACCEPTED, install candidate INSTALLATION_IN_PROGRESS_POST_FEE (completed_step=4).",
- hi:"<b>State vs completed_step:</b> INSTALLATION_IN_PROGRESS_POST_FEE covers COMPLETED_STEP 3/4/5 — the state machine self-loops and the granular position is carried by the separate <code>completed_step</code> integer (next required step = completed_step+1). Migration must set <b>both</b> current_state AND completed_step.",
- old:[
-  {t:"TASKS · INSTALLATION (1781335322392052) — Snowflake PROD_DB.DYNAMODB", rows:[
-    ["ID","1781335322392052"],["TYPE","INSTALLATION"],["STATUS","1 (open / in-progress)"],["COMPLETED_STEP","4 (CONNECTION_INFO done)"],
-    ["PARTNER_ID","281749854824813 (CSP)"],["ASSIGNEE","281612415879954 (rohit/technician)"],["ASSIGNEE_NAME","Gulshan"],
-    ["SLOT_TIME","2026-06-14T05:29:59+05:30"],["SLOT_ID","4"],["ASSIGNED_TIME","2026-06-13T12:18:58+05:30"],
-    ["IS_CALLED","true"],["IS_SELF_ASSIGNED","false"],["MOBILE","9354077816 (not migrated)"],
-    ["CREATED / MODIFIED","2026-06-13T12:18:58 / 15:37:23"],
-    ["EXTRA_DATA.deviceId","GX153715"],["EXTRA_DATA.opticalPower","-20.9691"],["EXTRA_DATA.ssid","sumit_7816"],
-    ["EXTRA_DATA.planSpeed","100"],["EXTRA_DATA.installation_tat_time","2026-06-13T23:59:59Z"],["EXTRA_DATA.assigned_task_id","1781335162716798"]
-  ]},
-  {t:"TASKS · LEAD_ALLOCATION (1781335162716798) — the allocation", rows:[
-    ["TYPE","LEAD_ALLOCATION"],["STATUS","2 (accepted)"],["SOURCE","ginie-delivery-allocation"],["INTEREST_STATUS","ASSIGNED"],
-    ["PARTNER_SLOT_PROPOSED_AT","2026-06-13T12:17:29+05:30"],["PROPOSED_SLOT_TIME","2026-06-14T05:29:59+05:30"],
-    ["CUSTOMER_CONFIRMED_TIME","2026-06-13T06:48:19Z"],["INTERESTED_TIME","2026-06-13T12:17:23+05:30"],
-    ["NEAREST_DISTANCE","9"],["ASSIGNEE","281612415879954 (Gulshan)"],["PARENT_ID","1781334572037746 (booking root)"],
-    ["CREATED","2026-06-13T12:17:07+05:30"]
-  ]},
-  {t:"TASKS · child step-tasks (PARENT_ID = INSTALLATION.ID)", rows:[
-    ["SELFIE","STATUS=2 (done)"],["AADHAR","STATUS=2 (done)"],["SHARED","STATUS=2 (done)"],["CONNECTION_INFO","STATUS=2 (done)"],
-    ["DEVICE_PHOTO","pending (step 5)"],["SPEED_TEST","pending (step 6)"],["OTP_VERIFIED","pending (step 7)"],["RATING","pending (step 8)"],
-    ["note","child RSLVD_DATETIME mostly sentinel 0000-12-30 → unreliable timestamps"]
-  ]},
-  {t:"BOOKING (TASK_ID = 1781335322392052) — customer identity & deposit", rows:[
-    ["ACCOUNT_ID","281749855088053  →  customer_id"],["NAME","sumit"],["BOOKING_STATE","ROHIT_ARRIVED"],
-    ["PLAN_ID","null (→ hardcode 22)"],["DEVICE_ID","GX153715"],["SSID","sumit_7816"],["NASID","704323"],
-    ["SD_TXN_ID","custGen_9354077816_203507326_1"],["SD_AMOUNT","300 (security deposit = security_fee)"],["SD_CONFIG_ID","5"],
-    ["AADHAR_FRONT_URL","9354077816/AADHAR_FRONT"],["AADHAR_BACK_URL","9354077816/AADHAR_BACK"],
-    ["ADDRESS","{home:551 B, locality:Chirag Dilli 110017, city:New Delhi}"],["LAT / LNG","28.5380495 / 77.2306360"],
-    ["SLOT_DETAILS","{slotId:233682, assigneeName:Gulshan, slotEndTime:2026-06-14T19:00}"]
-  ]}
- ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855088053", customerName:"sumit", partnerId:"281749854824813", assignee:"281612415879954", lat:"28.5380", lng:"77.2306", address:"{home:551 B, locality:Chirag Dilli 110017, city:New Delhi, lat, lng}::jsonb", allocState:"ACCEPTED", acceptanceTs:"2026-06-13T12:17:07+05:30", assignedTs:"2026-06-13T12:18:58+05:30", created:"2026-06-13T12:18:58", modified:"2026-06-13T15:37:23", candState:"INSTALLATION_IN_PROGRESS_POST_FEE", candNote:"from COMPLETED_STEP=4 (POST_FEE self-loop over SHARED/CONNECTION_INFO/DEVICE_PHOTO; completed_step is the cursor)", completedStep:"4", completedStepN:4, proposedDate:"2026-06-14", confirmedAt:"2026-06-13T06:48:19Z", slotSource:"CUSTOMER", slotDate:"2026-06-14", slotNumber:"4", deviceId:"GX153715", ssid:"sumit_7816", optical:"-20.97", feeStatus:"PAID", feeTxn:"custGen_9354077816_203507326_1", extraData:"{aadhar_front:9354077816/AADHAR_FRONT, aadhar_back:9354077816/AADHAR_BACK, device, optical}", radius:"9.0", calls:"≥1", deadline:"2026-06-13T23:59:59Z", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO"], hasCustody:true}
-},
-{
- id:"c10", title:"Case 10 · Awaiting customer OTP", key:"INSTALLATION 1781350265664490 · customer 281749855088200 (rani)",
- rule:"COMPLETED_STEP=6 (SPEED_TEST done, OTP not yet verified) → AWAITING_CUSTOMER_OTP.",
- old:[
-  {t:"TASKS · INSTALLATION (1781350265664490)", rows:[["STATUS","1"],["COMPLETED_STEP","6 (SPEED_TEST done)"],["ASSIGNEE","137438996037 (RKCABLE)"],["SLOT_TIME","2026-06-13"],["PARTNER_ID","274877928231"]]},
-  {t:"BOOKING (TASK_ID 1781350265664490)", rows:[["ACCOUNT_ID","281749855088200  →  customer_id"],["NAME","rani"],["BOOKING_STATE","ROHIT_ARRIVED"],["SD_TXN_ID","custGen_6367244420_203513526_0 (PAID)"],["AADHAR_FRONT_URL","6367244420/AADHAR_FRONT"],["LAT / LNG","28.5966 / 77.0769"]]}
- ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855088200", customerName:"rani", partnerId:"274877928231", assignee:"137438996037", lat:"28.5966", lng:"77.0769", allocState:"ACCEPTED", candState:"AWAITING_CUSTOMER_OTP", candNote:"COMPLETED_STEP=6 (SPEED_TEST done)", completedStep:"6", completedStepN:6, otp:"false", feeStatus:"PAID", feeTxn:"custGen_6367244420_203513526_0", deviceId:"← BOOKING.DEVICE_ID", ssid:"← BOOKING.SSID", optical:"(CONNECTION_INFO)", download:"(SPEED_TEST reading)", extraData:"{aadhar_front ← 6367244420/AADHAR_FRONT}", slotDate:"2026-06-13", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO","DEVICE_PHOTO","SPEED_TEST"], hasCustody:true}
-},
-{
- id:"c11", title:"Case 11 · Rating pending (rare)", key:"COMPLETED_STEP=7 — momentary",
- warn:"COMPLETED_STEP=7 (OTP verified, rating not yet submitted) is a momentary window — no current STATUS=1 example found in 45 days. Shown conceptually; maps to RATING_PENDING.",
- rule:"After OTP verification the candidate sits at RATING_PENDING until the customer rating is submitted, then → CONNECTION_ACTIVE (out of scope).",
- old:[
-  {t:"TASKS · INSTALLATION", rows:[["COMPLETED_STEP","7 (OTP done)"],["RATING_DONE","false"],["note","transient — rare to catch open"]]},
-  {t:"BOOKING", rows:[["BOOKING_STATE","ROHIT_ARRIVED"],["ACCOUNT_ID","→ customer_id"]]}
- ],
- p:{connState:"PENDING_INSTALL", allocState:"ACCEPTED", candState:"RATING_PENDING", candNote:"COMPLETED_STEP=7 (OTP done)", completedStep:"7", completedStepN:7, otp:"true", feeStatus:"PAID", deviceId:"← BOOKING.DEVICE_ID", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO","DEVICE_PHOTO","SPEED_TEST"], hasCustody:true}
+ p:{connState:"PENDING_INSTALL", customerId:"281749855088200", customerName:"rani", partnerId:"274877928231", assignee:"137438996037", lat:"28.5966", lng:"77.0769", allocState:"ACCEPTED", candState:"AWAITING_CUSTOMER_OTP", candNote:"speed test done; OTP next", completedStep:"6", completedStepN:6, otp:"false", feeStatus:"PAID", feeTxn:"custGen_6367244420_203513526_0", deviceId:"← BOOKING.DEVICE_ID", ssid:"← BOOKING.SSID", optical:"(CONNECTION_INFO)", download:"(SPEED_TEST reading)", extraData:"{aadhar_front ← 6367244420/AADHAR_FRONT}", slotDate:"2026-06-13", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO","DEVICE_PHOTO","SPEED_TEST"], hasCustody:false}
 }
 ];
 
@@ -346,21 +281,17 @@ const RIGHT=["connections","alloc","cand","stephist","translog"];
 // ---- Case Menu pane (static 15) ----
 (function(){
   const MENU=[
-   ["1","Allocated, not accepted","LEAD_ALLOCATION assigned; no INSTALLATION task","(none)","REQUESTED","ASSIGNED","live"],
-   ["2","Accepted, awaiting slot","INSTALLATION open; no PROPOSED_SLOT","AWAITING_SLOT_PROPOSAL","PENDING_INSTALL","ACCEPTED","live"],
-   ["3","Slot proposed","PARTNER_SLOT_PROPOSED_AT set; no CUSTOMER_CONFIRMED_TIME","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","ACCEPTED","live"],
-   ["4","Slot confirmed by customer","CUSTOMER_CONFIRMED_TIME set","SLOT_CONFIRMED_BY_CUSTOMER","PENDING_INSTALL","ACCEPTED","live"],
-   ["5","Awaiting technician","slot confirmed; no ASSIGNEE","AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","ACCEPTED","live"],
-   ["6","Technician assigned","ASSIGNEE + ASSIGNED_TIME; COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","ACCEPTED","live"],
-   ["7","On-site, pre-fee","COMPLETED_STEP=1 (SELFIE)","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","ACCEPTED","live"],
-   ["8","On-site, fee pending","ROHIT_ARRIVED, SD_TXN_ID null (deposit not paid)","FEE_COLLECTION_PENDING","PENDING_INSTALL","ACCEPTED","live"],
-   ["9","On-site, post-fee ⭐","COMPLETED_STEP=3/4/5 (SHARED/CONNECTION_INFO/DEVICE_PHOTO)","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","ACCEPTED","live"],
-   ["10","Awaiting OTP","COMPLETED_STEP=6 (SPEED_TEST done)","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","ACCEPTED","live"],
-   ["11","Rating pending","COMPLETED_STEP=7 (OTP done)","RATING_PENDING","PENDING_INSTALL","ACCEPTED","live"]
+   ["1","Notified (partner yet to accept)","lead NOTIF_SENT, status=0 (no acceptance)","— (no candidate)","REQUESTED","ASSIGNED / UNASSIGNED","live"],
+   ["2","Slot Selected","lead CUSTOMER_AWAITING (partner proposed)","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","ACCEPTED","live"],
+   ["3","Slot Confirmed","lead CUSTOMER_CONFIRMED","AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","ACCEPTED","live"],
+   ["4","Technician Assigned","INSTALLATION open, SD null, pre-payment","TECHNICIAN_ASSIGNED","PENDING_INSTALL","ACCEPTED","live"],
+   ["5","Payment Done","SD_TXN_ID set (step 2–3)","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","ACCEPTED","live"],
+   ["6","Device ID linked","COMPLETED_STEP=4 (CONNECTION_INFO)","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","ACCEPTED","live"],
+   ["7","Speed Test (awaiting OTP)","COMPLETED_STEP=6","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","ACCEPTED","live"]
   ];
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_menu";
   pane.innerHTML=`
-   <div class="banner"><b>Case menu — 11 in-flight archetypes (the full migration scope)</b><div class="rule">These 11 are the only installs we migrate — each in-flight install collapses into one of these by where it sits in the 20-state machine (read off TASKS columns). Case 9 (⭐) is fully column-mapped in the <b>Worked example</b> tab. allocation = the live OPEN value (ACCEPTED through the whole install; ACTIVE only at completion).</div></div>
+   <div class="banner"><b>Case menu — 7 migration cases (the full scope)</b><div class="rule">Every active booking collapses into one of these 7 broad cases by its last reached state. Each is fully column-mapped in the <b>Worked example</b> tab. Case 1 (Notified) has no candidate — connection + allocation only; cases 2–7 (accepted onward) get the install candidate. On-site intermediate steps (Selfie/Aadhar/Shared/DevicePhoto) collapse into the nearest of these cases.</div></div>
    <table class="menu"><thead><tr><th>#</th><th>Case</th><th>Old TASKS signature</th><th>install_execution_candidate state</th><th>connection</th><th>allocation</th></tr></thead>
    <tbody>${MENU.map(m=>`<tr class="live"><td><b>${m[0]}</b></td><td>${m[1]}</td><td><code>${m[2]}</code></td><td><b>${m[3]}</b></td><td>${m[4]}</td><td>${m[5]}</td></tr>`).join("")}</tbody></table>
    <div class="warn" style="margin-top:14px"><b>Out of scope (NOT migrated):</b> installed/active (owned by the connection/recharge backbone), declined/failed, cancelled (customer or upstream), and expired — these terminal states are dropped, not re-projected. customer_access_states (CAEOS) and netbox_custody (ACS) are never written in-flight — set at activation (device is CUSTODIED until DEPLOYED at CONNECTION_ACTIVE).</div>`;
@@ -371,28 +302,19 @@ const RIGHT=["connections","alloc","cand","stephist","translog"];
 // ---- Old → New State Map pane (primary view: drive from old states) ----
 (function(){
   const MAP=[
-   ["ADDRESS_VERIFIED / BOOKING_FEE_PAID","pre-acceptance, no INSTALLATION task","— (no candidate)","REQUESTED","—","1"],
-   ["Partner notified (NOTIF_SENT), not accepted","single assigned CSP, not accepted","— (no candidate)","REQUESTED","—","1"],
-   ["PARTNER_MARK_INTEREST (accepted), no slot","accepted; no PARTNER_SLOT_PROPOSED_AT","AWAITING_SLOT_PROPOSAL","PENDING_INSTALL","NOT_APPLICABLE","2"],
-   ["Slot proposed (CUSTOMER_AWAITING)","PARTNER_SLOT_PROPOSED_AT set, not confirmed","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","NOT_APPLICABLE","3"],
-   ["SLOT_CONFIRMED_BY_CUSTOMER","CUSTOMER_CONFIRMED_TIME set, no rohit","SLOT_CONFIRMED_BY_CUSTOMER → AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","NOT_APPLICABLE","4–5"],
-   ["ROHIT_ASSIGNED","ASSIGNEE set, COMPLETED_STEP=0","TECHNICIAN_ASSIGNED","PENDING_INSTALL","NOT_APPLICABLE","6"],
-   ["ROHIT_ARRIVED · step 0 (arrived)","on-site, no step done","ARRIVED_AT_SITE","PENDING_INSTALL","NOT_APPLICABLE","—"],
-   ["ROHIT_ARRIVED · SELFIE (step 1)","COMPLETED_STEP=1","INSTALLATION_IN_PROGRESS_PRE_FEE","PENDING_INSTALL","NOT_APPLICABLE","7"],
-   ["ROHIT_ARRIVED · AADHAR (step 2), SD null","fee not paid (SD_TXN_ID null)","FEE_COLLECTION_PENDING","PENDING_INSTALL","PENDING","8"],
-   ["ROHIT_ARRIVED · security deposit paid (SD_TXN_ID set)","fee event — SHARED gate clears","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
-   ["ROHIT_ARRIVED · SHARED (step 3)","SD set; agreement","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
-   ["ROHIT_ARRIVED · CONNECTION_INFO (step 4)","SD set; device + optical captured","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
-   ["ROHIT_ARRIVED · DEVICE_PHOTO (step 5)","SD set; router photo","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","9"],
-   ["ROHIT_ARRIVED · SPEED_TEST (step 6)","COMPLETED_STEP=6","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","PAID","10"],
-   ["ROHIT_ARRIVED · OTP verified (step 7)","COMPLETED_STEP=7","RATING_PENDING","PENDING_INSTALL","PAID","11"],
-   ["RATING (step 8) / STATUS=2 — installed","install complete","CONNECTION_ACTIVE","ACTIVE","PAID","out"],
-   ["ALL_PARTNER_DECLINES / STATUS=-1","declined / cancelled","INSTALLATION_REPORTED_FAILED / CANCELLED_*","PENDING_DEACTIVATION","—","out"]
+   ["Notified (lead NOTIF_SENT, status=0)","notified, no partner acceptance","— (connection + allocation only, NO candidate)","REQUESTED","—","1"],
+   ["Slot Selected (lead CUSTOMER_AWAITING)","partner proposed a slot","AWAITING_CUSTOMER_SLOT_CONFIRMATION","PENDING_INSTALL","NOT_APPLICABLE","2"],
+   ["Slot Confirmed (lead CUSTOMER_CONFIRMED)","customer confirmed, no rohit","AWAITING_TECHNICIAN_ASSIGNMENT","PENDING_INSTALL","NOT_APPLICABLE","3"],
+   ["Technician Assigned (INSTALLATION open, SD null)","on-site pre-payment — Selfie/Aadhar fold in","TECHNICIAN_ASSIGNED","PENDING_INSTALL","NOT_APPLICABLE","4"],
+   ["Payment Done (SD_TXN_ID set, step 2–3)","deposit paid — Shared folds in","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","5"],
+   ["Device ID linked (COMPLETED_STEP=4)","CONNECTION_INFO: device + optical — DevicePhoto folds in","INSTALLATION_IN_PROGRESS_POST_FEE","PENDING_INSTALL","PAID","6"],
+   ["Speed Test (COMPLETED_STEP=6)","speed test done; OTP next","AWAITING_CUSTOMER_OTP","PENDING_INSTALL","PAID","7"],
+   ["OTP (step 7) / installed / declined","install completes at OTP; or declined","CONNECTION_ACTIVE / REPORTED_FAILED","ACTIVE / PENDING_DEACTIVATION","—","out"]
   ];
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_oldnew";
   pane.innerHTML=`
-   <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states (full)</b><div class="rule">Driven <b>from the old world</b>: every old install state — <code>BOOKING_STATE</code> (coarse phase) + <code>INSTALLATION.COMPLETED_STEP</code> (on-site granularity) + <code>SD_TXN_ID</code> (fee) — maps to exactly one new candidate state. <code>ROHIT_ARRIVED</code> is the umbrella for the whole on-site phase (steps 0–8, verified: 7,434 current rows); the step number resolves the sub-state. The ₹300 deposit is collected <b>on-site</b> (SD_TXN_ID 0% set until ROHIT_ARRIVED, then 94%), so <b>FEE_COLLECTION_PENDING is real</b> (Case 8). <b style="color:#0a7a3d">Green = in scope</b> · <b style="color:#b25b00">amber = terminal (out)</b>.</div></div>
-   <table class="menu"><thead><tr><th>OLD-world state (BOOKING_STATE / step / SD)</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>security_fee</th><th>Case</th></tr></thead>
+   <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states (7 cases)</b><div class="rule">Driven <b>from the old world</b>, collapsed to <b>7 broad cases</b> by last reached state: pre-arrival from the lead <code>interest_status</code>, on-site from <code>INSTALLATION.COMPLETED_STEP</code> + <code>SD_TXN_ID</code> (fee). Intermediate steps (Selfie/Aadhar/Shared/DevicePhoto) fold into the nearest case. The ₹300 deposit is collected <b>on-site</b> (SD_TXN_ID authoritative for the fee). Case 1 (Notified) gets connection+allocation only (no candidate); install completes at OTP. <b style="color:#0a7a3d">Green = in scope (7 cases)</b> · <b style="color:#b25b00">amber = terminal (out)</b>.</div></div>
+   <table class="menu"><thead><tr><th>OLD-world state (last reached)</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>security_fee</th><th>Case</th></tr></thead>
    <tbody>${MAP.map(m=>`<tr class="${m[5]==='out'?'term':'live'}"><td><b>${m[0]}</b></td><td><code>${m[1]}</code></td><td><b>${m[2]}</b></td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]==='out'?'—':m[5]}</td></tr>`).join("")}</tbody></table>
    <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate</b> — POST_FEE/OTP/RATING require it set; null on-site → FEE_COLLECTION_PENDING regardless of step. On-site precedence: <code>step≤1 → ARRIVED/PRE_FEE · else SD null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. <b>Custody:</b> the device is <code>CUSTODIED</code> with the CSP throughout the install; it becomes <code>DEPLOYED</code> only at <code>CONNECTION_ACTIVE</code> (CustomerInstallationSignal) — so the in-flight migration does <b>not</b> write netbox_custody. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID; single D&amp;A-assigned CSP only (LATE_INTERESTED dropped); plan_id = 22 (const).</div>`;
   panesEl.appendChild(pane);
@@ -641,7 +563,7 @@ function showWorked(){
   });
   showPane(`pane_wx_${CASES[0].id}`);
 }
-[["approach","Approach & Process"],["oldnew","Old → New Map"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (11)"]].forEach(([k,lbl])=>{
+[["approach","Approach & Process"],["oldnew","Old → New Map"],["prereq","Prerequisites"],["wx","Worked Example"],["menu","Case Menu (7)"]].forEach(([k,lbl])=>{
   const b=document.createElement("button");b.className="toptab";b.dataset.k=k;b.textContent=lbl;
   b.onclick=()=> k==="approach"?showStatic("approach","pane_approach"):k==="oldnew"?showStatic("oldnew","pane_oldnew"):k==="prereq"?showStatic("prereq","pane_prereq"):k==="menu"?showStatic("menu","pane_menu"):showWorked();
   tabsEl.appendChild(b);
