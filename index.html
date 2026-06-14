@@ -279,7 +279,7 @@ const CASES = [
   {d:"Technician (rohit)", src:"TASKS.ASSIGNEE → csp_user.id"},
   {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"},
   {d:"Security deposit txn", src:"BOOKING.SD_TXN_ID, SD_AMOUNT"},
-  {d:"Selfie image (S3 key)", src:"SELFIE child task object-store key — copy to new bucket", hint:"child of INSTALLATION, type=SELFIE"},
+  {d:"Selfie image (S3 key)", src:"SELFIE child task · EXTRA_DATA.image", hint:"s3://i2e1-client-data/installations/{mobile}/selfie/*.jpg — copy to new bucket"},
   {d:"Aadhar images front + back", src:"BOOKING.AADHAR_FRONT_URL, BOOKING.AADHAR_BACK_URL"}
  ],
  write:[
@@ -303,7 +303,7 @@ const CASES = [
     ["extra_data.aadhar_front / aadhar_back","← BOOKING.AADHAR_*_URL","OLD","ID images carried"]
   ], nullNote:"device_id, optical, ssid, otp, speed — null"},
   {t:"stephist", cols:[
-    ["row · SELFIE","result_code=PASS, payload.image_url ← selfie S3 key","OLD","so Selfie shows done"],
+    ["row · SELFIE","result_code=PASS, payload.image_url ← SELFIE.EXTRA_DATA.image","OLD","so Selfie shows done"],
     ["row · AADHAR","result_code=PASS","OLD","so Aadhar shows done"],
     ["row · SHARED","result_code=PASS","OLD",""],
     ["connection_id / actor_id","(=minted) / executor_id","MINT/LOOKUP",""]
@@ -324,7 +324,7 @@ const CASES = [
   {d:"Technician (rohit)", src:"TASKS.ASSIGNEE → csp_user.id"},
   {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"},
   {d:"Security deposit txn", src:"BOOKING.SD_TXN_ID"},
-  {d:"Selfie image (S3 key)", src:"SELFIE child task object-store key"},
+  {d:"Selfie image (S3 key)", src:"SELFIE child task · EXTRA_DATA.image (s3://i2e1-client-data/installations/{mobile}/selfie/*.jpg)"},
   {d:"Aadhar images front + back", src:"BOOKING.AADHAR_FRONT_URL, AADHAR_BACK_URL"},
   {d:"Device id (router)", src:"INSTALLATION.EXTRA_DATA.deviceId"},
   {d:"Optical power", src:"INSTALLATION.EXTRA_DATA.opticalPower"},
@@ -355,7 +355,7 @@ const CASES = [
     ["network_type / pppoe_*","← CONNECTION_INFO payload","OLD",""]
   ], nullNote:"measured_download_mbps, otp_verified — null"},
   {t:"stephist", cols:[
-    ["row · SELFIE","PASS, payload.image_url ← selfie key","OLD",""],
+    ["row · SELFIE","PASS, payload.image_url ← SELFIE.EXTRA_DATA.image","OLD",""],
     ["row · AADHAR","PASS","OLD",""],
     ["row · SHARED","PASS","OLD",""],
     ["row · CONNECTION_INFO","PASS","OLD","device step done"]
@@ -376,7 +376,7 @@ const CASES = [
   {d:"Technician (rohit)", src:"TASKS.ASSIGNEE → csp_user.id"},
   {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"},
   {d:"Security deposit txn", src:"BOOKING.SD_TXN_ID"},
-  {d:"Selfie image (S3 key)", src:"SELFIE child task object-store key"},
+  {d:"Selfie image (S3 key)", src:"SELFIE child task · EXTRA_DATA.image (s3://i2e1-client-data/installations/{mobile}/selfie/*.jpg)"},
   {d:"Aadhar images front + back", src:"BOOKING.AADHAR_FRONT_URL, AADHAR_BACK_URL"},
   {d:"Device id (router)", src:"INSTALLATION.EXTRA_DATA.deviceId"},
   {d:"Optical power", src:"INSTALLATION.EXTRA_DATA.opticalPower"},
@@ -477,7 +477,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog"];
    ["P2 · rohit &rarr; executor_id","csp_gateway.csp_user.legacy_user_id &rarr; csp_user.id. Sparse (271/426). Technicians must be onboarded.","k1"],
    ["P3 · Zone polygons","csp_capacity_coverage.zones.boundary_polygon — point-in-polygon resolve(lat,lng). 6,591 seeded. No nearest fallback &rarr; OUT_OF_COVERAGE if outside all polygons.","kb"],
    ["P4 · CSP zone eligibility","csp_capacity_coverage.csp_zone_eligibility (csp_id, zone_id) must exist for the resolved pair, else seed it. A CSP is multi-zone (up to 19).","kb"],
-   ["P5 · Image object-store copy","Old keys are mobile-namespaced (e.g. 9354077816/AADHAR_FRONT). New ImageStorage uses its own bucket &rarr; physical copy needed, not a string copy.","kb"]
+   ["P5 · Image object-store copy","Copy from old bucket <code>i2e1-client-data</code>: aadhar = <code>BOOKING.AADHAR_FRONT_URL/AADHAR_BACK_URL</code> ({mobile}/AADHAR_FRONT); selfie = <code>SELFIE.EXTRA_DATA.image</code> (installations/{mobile}/selfie/*.jpg). New ImageStorage uses its own bucket &rarr; physical copy needed, not a string copy.","kb"]
   ];
   const pane=document.createElement("div");pane.className="casepane";pane.id="pane_prereq";
   pane.innerHTML=`
