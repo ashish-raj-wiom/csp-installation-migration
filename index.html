@@ -146,16 +146,16 @@ const CASES = [
  rule:"Notified to a CSP, no acceptance (lead NOTIF_SENT, status=0). Migrate connection + allocation only — NO install candidate (created on acceptance). D&A re-drives assignment.",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID", hint:"trace LEAD parent_id → booking root; BOOKING by that TASK_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"}
  ],
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT","spine for all joins"],
     ["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],
-    ["service_address","← BOOKING.ADDRESS + LAT/LNG","OLD",""],
-    ["zone_id","resolve(LAT,LNG)","API","CC point-in-polygon"],
+    ["service_address","← TASKS.EXTRA_DATA.address + lat/lng","OLD",""],
+    ["zone_id","resolve(EXTRA_DATA.lat/lng)","API","csp_capacity_coverage.zones.boundary_polygon — point-in-polygon"],
     ["plan_id","22","CONST","hardcoded"],
     ["current_state","REQUESTED","CASE","no acceptance yet"]
   ], nullNote:"csp_id (set when a CSP accepts); state_timestamp, retry_count, pause, version, timers, activated_at — null/default"},
@@ -173,8 +173,8 @@ const CASES = [
  rule:"CSP accepted and proposed a slot (lead CUSTOMER_AWAITING, PARTNER_SLOT_PROPOSED_AT set); customer not confirmed → AWAITING_CUSTOMER_SLOT_CONFIRMATION.",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"},
   {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id", hint:"resolve partner_id → csp_id"},
   {d:"Proposed slot date/time", src:"TASKS.PROPOSED_SLOT_TIME, PARTNER_SLOT_PROPOSED_AT"}
@@ -182,8 +182,8 @@ const CASES = [
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],
-    ["csp_id","← csp_account by partner_id","LOOKUP",""],["zone_id","resolve(LAT,LNG)","API",""],
-    ["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
+    ["csp_id","← csp_account by partner_id","LOOKUP",""],["zone_id","resolve(EXTRA_DATA.lat/lng)","API","CC zones.boundary_polygon point-in-polygon"],
+    ["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
   ], nullNote:"timers / retry / pause / version / activated_at — default"},
   {t:"alloc", cols:[
     ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
@@ -193,7 +193,7 @@ const CASES = [
     ["execution_candidate_id","(new UUID)","MINT","candidate created here"],["connection_id / object_id","(=minted)","MINT",""],
     ["csp_id","← csp_account","LOOKUP",""],["candidate_type / task_family / aggregation_type","PRE_INSTALL / INSTALL / INDIVIDUAL","CONST",""],
     ["current_state","AWAITING_CUSTOMER_SLOT_CONFIRMATION","CASE",""],["task_status","OPEN","CASE",""],["completed_step","0","CONST",""],
-    ["zone_id","(=connection's)","API",""],["service_address","← BOOKING.ADDRESS","OLD",""],["customer_name","← BOOKING.NAME","OLD",""],
+    ["zone_id","(=connection's)","API",""],["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["customer_name","← TASKS.TITLE","OLD",""],
     ["proposed_slot_date","← TASKS.PROPOSED_SLOT_TIME","OLD",""]
   ], nullNote:"confirmed_slot, executor_id, security_fee, device_id, optical, ssid, otp, speed — null"}
  ]
@@ -203,8 +203,8 @@ const CASES = [
  rule:"Customer confirmed the slot (lead CUSTOMER_CONFIRMED, CUSTOMER_CONFIRMED_TIME set), no technician yet → AWAITING_TECHNICIAN_ASSIGNMENT.",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"},
   {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id"},
   {d:"Proposed slot date/time", src:"TASKS.PROPOSED_SLOT_TIME"},
@@ -213,7 +213,7 @@ const CASES = [
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],["csp_id","← csp_account","LOOKUP",""],
-    ["zone_id","resolve(LAT,LNG)","API",""],["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
+    ["zone_id","resolve(EXTRA_DATA.lat/lng)","API","CC zones.boundary_polygon point-in-polygon"],["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
   ], nullNote:"timers / retry / pause / activated_at — default"},
   {t:"alloc", cols:[
     ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
@@ -236,8 +236,8 @@ const CASES = [
  rule:"Technician assigned / on-site, deposit not yet paid (Selfie/Aadhar collapse here). completed_step=0 → TECHNICIAN_ASSIGNED.",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"},
   {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id"},
   {d:"Proposed slot date/time", src:"TASKS.PROPOSED_SLOT_TIME"},
@@ -248,7 +248,7 @@ const CASES = [
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],["csp_id","← csp_account","LOOKUP",""],
-    ["zone_id","resolve(LAT,LNG)","API",""],["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
+    ["zone_id","resolve(EXTRA_DATA.lat/lng)","API","CC zones.boundary_polygon point-in-polygon"],["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
   ], nullNote:"timers / retry / pause / activated_at — default"},
   {t:"alloc", cols:[
     ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
@@ -270,8 +270,8 @@ const CASES = [
  hi:"<b>Carry the captured documents forward.</b> Selfie + Aadhar images migrate into step-history + extra_data. When the CSP opens the new app, the task resumes here — no re-capture of Selfie / Aadhar.",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"},
   {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id"},
   {d:"Proposed slot date/time", src:"TASKS.PROPOSED_SLOT_TIME"},
@@ -280,12 +280,12 @@ const CASES = [
   {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"},
   {d:"Security deposit txn", src:"BOOKING.SD_TXN_ID, SD_AMOUNT"},
   {d:"Selfie image (S3 key)", src:"SELFIE child task · EXTRA_DATA.image", hint:"s3://i2e1-client-data/installations/{mobile}/selfie/*.jpg — copy to new bucket"},
-  {d:"Aadhar images front + back", src:"BOOKING.AADHAR_FRONT_URL, BOOKING.AADHAR_BACK_URL"}
+  {d:"Aadhar images front + back", src:"{mobile}/AADHAR_FRONT & _BACK (TASKS.MOBILE) — BOOKING.AADHAR_*_URL confirms"}
  ],
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],["csp_id","← csp_account","LOOKUP",""],
-    ["zone_id","resolve(LAT,LNG)","API",""],["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
+    ["zone_id","resolve(EXTRA_DATA.lat/lng)","API","CC zones.boundary_polygon point-in-polygon"],["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
   ], nullNote:"timers / retry / pause / activated_at — default"},
   {t:"alloc", cols:[
     ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
@@ -315,8 +315,8 @@ const CASES = [
  rule:"Device scanned + linked at CONNECTION_INFO (step 4); network + optical captured. completed_step=4 → INSTALLATION_IN_PROGRESS_POST_FEE with device populated.",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"},
   {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id"},
   {d:"Proposed slot date/time", src:"TASKS.PROPOSED_SLOT_TIME"},
@@ -325,7 +325,7 @@ const CASES = [
   {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"},
   {d:"Security deposit txn", src:"BOOKING.SD_TXN_ID"},
   {d:"Selfie image (S3 key)", src:"SELFIE child task · EXTRA_DATA.image (s3://i2e1-client-data/installations/{mobile}/selfie/*.jpg)"},
-  {d:"Aadhar images front + back", src:"BOOKING.AADHAR_FRONT_URL, AADHAR_BACK_URL"},
+  {d:"Aadhar images front + back", src:"{mobile}/AADHAR_FRONT & _BACK (TASKS.MOBILE)"},
   {d:"Device id (router)", src:"INSTALLATION.EXTRA_DATA.deviceId"},
   {d:"Optical power", src:"INSTALLATION.EXTRA_DATA.opticalPower"},
   {d:"Network type / PPPoE", src:"CONNECTION_INFO child payload"},
@@ -334,7 +334,7 @@ const CASES = [
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],["csp_id","← csp_account","LOOKUP",""],
-    ["zone_id","resolve(LAT,LNG)","API",""],["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
+    ["zone_id","resolve(EXTRA_DATA.lat/lng)","API","CC zones.boundary_polygon point-in-polygon"],["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
   ], nullNote:"timers / retry / pause / activated_at — default"},
   {t:"alloc", cols:[
     ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
@@ -367,8 +367,8 @@ const CASES = [
  rule:"Speed test submitted (completed_step=6); customer OTP next → AWAITING_CUSTOMER_OTP. (OTP step 7 closes the old task → out of scope.)",
  need:[
   {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
-  {d:"Service address", src:"BOOKING.ADDRESS"},
-  {d:"Latitude / longitude", src:"BOOKING.LAT, BOOKING.LNG"},
+  {d:"Service address", src:"TASKS.EXTRA_DATA.address"},
+  {d:"Latitude / longitude", src:"TASKS.EXTRA_DATA.lat / lng", hint:"→ resolve zone_id via csp_capacity_coverage.zones (boundary_polygon)"},
   {d:"Plan", src:"hardcoded = 22"},
   {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id"},
   {d:"Proposed slot date/time", src:"TASKS.PROPOSED_SLOT_TIME"},
@@ -377,7 +377,7 @@ const CASES = [
   {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"},
   {d:"Security deposit txn", src:"BOOKING.SD_TXN_ID"},
   {d:"Selfie image (S3 key)", src:"SELFIE child task · EXTRA_DATA.image (s3://i2e1-client-data/installations/{mobile}/selfie/*.jpg)"},
-  {d:"Aadhar images front + back", src:"BOOKING.AADHAR_FRONT_URL, AADHAR_BACK_URL"},
+  {d:"Aadhar images front + back", src:"{mobile}/AADHAR_FRONT & _BACK (TASKS.MOBILE)"},
   {d:"Device id (router)", src:"INSTALLATION.EXTRA_DATA.deviceId"},
   {d:"Optical power", src:"INSTALLATION.EXTRA_DATA.opticalPower"},
   {d:"Network type / PPPoE / SSID", src:"CONNECTION_INFO child / EXTRA_DATA.ssid"},
@@ -386,7 +386,7 @@ const CASES = [
  write:[
   {t:"connections", cols:[
     ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],["csp_id","← csp_account","LOOKUP",""],
-    ["zone_id","resolve(LAT,LNG)","API",""],["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
+    ["zone_id","resolve(EXTRA_DATA.lat/lng)","API","CC zones.boundary_polygon point-in-polygon"],["service_address","← TASKS.EXTRA_DATA.address","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE",""]
   ], nullNote:"timers / retry / pause / activated_at — default"},
   {t:"alloc", cols:[
     ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
@@ -450,7 +450,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog"];
     <div class="m"><b>DYNAMODB.BOOKING</b><span>Customer <b>identity + booking data</b>: ACCOUNT_ID (customer_id), NAME, ADDRESS, AADHAR_*_URL, SD (security deposit), DEVICE. Key: TASK_ID.</span></div>
   </div>
   <div class="side-title" style="margin-top:18px">JOIN</div>
-  <div class="readhint"><div><code>INSTALLATION.ID = BOOKING.TASK_ID</code></div><div class="arr">&rarr;</div><div>BOOKING.ACCOUNT_ID = <b>customer_id</b>. (TASKS.CUSTOMER_ID is 0 — unusable; mobile is PII-masked.)</div></div>
+  <div class="readhint"><div>Most fields read <b>directly from TASKS</b> — mobile (<code>TASKS.MOBILE</code>, unmasked), name (<code>TITLE</code>), address + lat/lng + device/optical/ssid (<code>EXTRA_DATA</code>), selfie (<code>SELFIE.EXTRA_DATA.image</code>).</div><div class="arr">&rarr;</div><div><code>INSTALLATION.ID = BOOKING.TASK_ID</code> joined <b>only</b> for what TASKS lacks: <code>ACCOUNT_ID</code> = customer_id and <code>SD_TXN_ID</code> (deposit). zone_id ← CC <code>zones.boundary_polygon</code> resolve(lat,lng).</div></div>
   <div class="side-title" style="margin-top:18px">TARGET TABLES (5 services)</div>
   <div class="flow6" style="grid-template-columns:repeat(3,1fr)">
     <div class="m"><b>connections</b><span>CLOS — lifecycle (REQUESTED→PENDING_INSTALL→ACTIVE). The spine.</span></div>
@@ -526,7 +526,7 @@ const RIGHT=["connections","alloc","cand","stephist","translog"];
    <div class="banner" style="border-left-color:#0a7a3d"><b>Old-world states → New-world states (7 cases)</b><div class="rule">Driven <b>from the old world</b>, collapsed to <b>7 broad cases</b> by last reached state: pre-arrival from the lead <code>interest_status</code>, on-site from <code>INSTALLATION.COMPLETED_STEP</code> + <code>SD_TXN_ID</code> (fee). Intermediate steps (Selfie/Aadhar/Shared/DevicePhoto) fold into the nearest case. The ₹300 deposit is collected <b>on-site</b> (SD_TXN_ID authoritative for the fee). Case 1 (Notified) gets connection+allocation only (no candidate); install completes at OTP. <b style="color:#0a7a3d">Green = in scope (7 cases)</b> · <b style="color:#b25b00">amber = terminal (out)</b>.</div></div>
    <table class="menu"><thead><tr><th>OLD-world state (last reached)</th><th>Old signal</th><th>→ NEW candidate state</th><th>connection</th><th>security_fee</th><th>Case</th></tr></thead>
    <tbody>${MAP.map(m=>`<tr class="${m[5]==='out'?'term':'live'}"><td><b>${m[0]}</b></td><td><code>${m[1]}</code></td><td><b>${m[2]}</b></td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]==='out'?'—':m[5]}</td></tr>`).join("")}</tbody></table>
-   <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate</b> — POST_FEE/OTP/RATING require it set; null on-site → FEE_COLLECTION_PENDING regardless of step. On-site precedence: <code>step≤1 → ARRIVED/PRE_FEE · else SD null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. <b>Custody:</b> the device is <code>CUSTODIED</code> with the CSP throughout the install; it becomes <code>DEPLOYED</code> only at <code>CONNECTION_ACTIVE</code> (CustomerInstallationSignal) — so the in-flight migration does <b>not</b> write netbox_custody. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID; single D&amp;A-assigned CSP only (LATE_INTERESTED dropped); plan_id = 22 (const).</div>`;
+   <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate</b> — POST_FEE/OTP/RATING require it set; null on-site → FEE_COLLECTION_PENDING regardless of step. On-site precedence: <code>step≤1 → ARRIVED/PRE_FEE · else SD null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. <b>Custody:</b> the device is <code>CUSTODIED</code> with the CSP throughout the install; it becomes <code>DEPLOYED</code> only at <code>CONNECTION_ACTIVE</code> (CustomerInstallationSignal) — so the in-flight migration does <b>not</b> write netbox_custody. <b>Sourcing:</b> read directly from TASKS (mobile ← MOBILE unmasked, name ← TITLE, address/lat/lng + device/optical/ssid ← EXTRA_DATA); BOOKING joined only for customer_id (ACCOUNT_ID) + deposit (SD_TXN_ID); zone_id ← csp_capacity_coverage.zones (boundary_polygon) resolve(lat,lng). Single D&amp;A-assigned CSP only; plan_id = 22 (const).</div>`;
   panesEl.appendChild(pane);
 })();
 function buildCasePane(cs){
