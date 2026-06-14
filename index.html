@@ -142,81 +142,200 @@ const ABSENT_WHY = {
 // ===================== INSTALLATION WORKFLOW =====================
 const CASES = [
 {
- id:"c1", title:"Case 1 · Notified (partner yet to accept)", key:"LEAD_ALLOCATION 1781438377644204 · partner 274877926104",
- rule:"Booking notified to a CSP but no acceptance yet (lead NOTIF_SENT, status=0). No single accepted CSP → migrate connection + allocation only, NO install candidate (it is created on acceptance). New-world D&A re-drives assignment from here.",
- old:[
-  {t:"TASKS · LEAD_ALLOCATION (1781438377644204)", rows:[["TYPE","LEAD_ALLOCATION"],["INTEREST_STATUS","NOTIF_SENT"],["STATUS","0 (TODO / pending)"],["PARTNER_ID","274877926104 (notified, not accepted)"],["note","one row per notified partner — fan-out; no winner yet"]]},
-  {t:"BOOKING (via booking-root TASK_ID)", rows:[["ACCOUNT_ID","→ customer_id"],["SD_AMOUNT","300"]]}
+ id:"c1", title:"Case 1 · Notified (partner yet to accept)", key:"LEAD_ALLOCATION 1781440857118652 · partner 281749854679383",
+ rule:"Notified to a CSP, no acceptance (lead NOTIF_SENT, status=0). Migrate connection + allocation only — NO install candidate (created on acceptance). D&A re-drives assignment.",
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID", hint:"trace LEAD parent_id → booking root; BOOKING by that TASK_ID"},
+  {d:"Service address + lat/lng", src:"BOOKING.ADDRESS, LAT, LNG"},
+  {d:"Plan", src:"hardcoded = 22"}
  ],
- p:{connState:"REQUESTED", connStateNote:"no acceptance yet (T1 fires on ALLOCATION_ACCEPTED)", partnerId:"274877926104", allocState:"ASSIGNED / UNASSIGNED", allocNote:"notified; D&A re-drives acceptance", hasCand:false, hasCustody:false}
+ write:[
+  {t:"connections", cols:[
+    ["connection_id","(new UUID)","MINT","spine for all joins"],
+    ["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],
+    ["service_address","← BOOKING.ADDRESS + LAT/LNG","OLD",""],
+    ["zone_id","resolve(LAT,LNG)","API","CC point-in-polygon"],
+    ["plan_id","22","CONST","hardcoded"],
+    ["current_state","REQUESTED","CASE","no acceptance yet"]
+  ], nullNote:"csp_id (set when a CSP accepts), all timers / retry / pause / activated_at — null or default"},
+  {t:"alloc", cols:[
+    ["id","(new UUID)","MINT",""],
+    ["connection_id","(= minted)","MINT",""],
+    ["zone_id","(= connection's)","API",""],
+    ["allocation_state","UNASSIGNED","CASE","D&A re-drives assignment"]
+  ], nullNote:"csp_id, acceptance_timestamp, assigned_at — null (set when D&A assigns the CSP)"},
+  {t:"cand", cols:[], nullNote:"NOT created — the install candidate is created only on CSP acceptance (ALLOCATION_ACCEPTED)"}
+ ]
 },
 {
- id:"c2", title:"Case 2 · Slot Selected (partner proposed)", key:"LEAD_ALLOCATION 1781351306412735 · partner 281749854647629",
- rule:"Accepted CSP proposed a slot (lead CUSTOMER_AWAITING, PARTNER_SLOT_PROPOSED_AT set); customer not confirmed → AWAITING_CUSTOMER_SLOT_CONFIRMATION.",
- old:[
-  {t:"TASKS · LEAD_ALLOCATION (1781351306412735)", rows:[["INTEREST_STATUS","CUSTOMER_AWAITING"],["PARTNER_SLOT_PROPOSED_AT","2026-06-13T11:28:36"],["PROPOSED_SLOT_TIME","2026-06-14"],["CUSTOMER_CONFIRMED_TIME","(none)"],["PARTNER_ID","281749854647629"]]},
-  {t:"BOOKING (via booking-root TASK_ID)", rows:[["ACCOUNT_ID","→ customer_id"]]}
+ id:"c2", title:"Case 2 · Slot Selected (partner proposed)", key:"LEAD_ALLOCATION 1781440369263797 · partner 281749854651325",
+ rule:"CSP accepted and proposed a slot (lead CUSTOMER_AWAITING, PARTNER_SLOT_PROPOSED_AT set); customer not confirmed → AWAITING_CUSTOMER_SLOT_CONFIRMATION.",
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
+  {d:"Service address + lat/lng", src:"BOOKING.ADDRESS, LAT, LNG"},
+  {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account.csp_id", hint:"resolve partner_id → csp_id"},
+  {d:"Proposed slot date/time  ⟵ must-have", src:"TASKS.PROPOSED_SLOT_TIME, PARTNER_SLOT_PROPOSED_AT"}
  ],
- p:{connState:"PENDING_INSTALL", partnerId:"281749854647629", allocState:"ACCEPTED", candState:"AWAITING_CUSTOMER_SLOT_CONFIRMATION", candNote:"slot proposed, awaiting customer", completedStep:"0", completedStepN:0, proposedDate:"2026-06-14", hasCustody:false}
+ write:[
+  {t:"connections", cols:[
+    ["connection_id","(new UUID)","MINT",""],["customer_id","← BOOKING.ACCOUNT_ID","OLD",""],
+    ["csp_id","← csp_account by partner_id","LOOKUP",""],["zone_id","resolve(LAT,LNG)","API",""],
+    ["service_address","← BOOKING.ADDRESS","OLD",""],["plan_id","22","CONST",""],["current_state","PENDING_INSTALL","CASE","accepted"]
+  ], nullNote:"timers / retry / pause / activated_at — default"},
+  {t:"alloc", cols:[
+    ["id","(new UUID)","MINT",""],["connection_id","(=minted)","MINT",""],["csp_id","← csp_account","LOOKUP",""],
+    ["zone_id","(=connection's)","API",""],["allocation_state","ACCEPTED","CASE",""],["acceptance_timestamp","← notif-to-partner ts","OLD",""]
+  ], nullNote:"reassignment / release / previous_csp — null"},
+  {t:"cand", cols:[
+    ["execution_candidate_id","(new UUID)","MINT","first candidate row created here"],["connection_id / object_id","(=minted)","MINT",""],
+    ["csp_id","← csp_account","LOOKUP",""],["candidate_type / task_family / aggregation_type","PRE_INSTALL / INSTALL / INDIVIDUAL","CONST",""],
+    ["current_state","AWAITING_CUSTOMER_SLOT_CONFIRMATION","CASE",""],["task_status","OPEN","CASE",""],
+    ["zone_id / service_address / customer_name","← resolved / BOOKING","OLD",""],
+    ["proposed_slot_date","← TASKS.PROPOSED_SLOT_TIME","OLD","must-have for this state"]
+  ], nullNote:"completed_step=0; confirmed_slot, executor, fee, device, otp, speed — null"}
+ ]
 },
 {
- id:"c3", title:"Case 3 · Slot Confirmed (by customer)", key:"LEAD_ALLOCATION 1781357443367529 · partner 281749854822481",
+ id:"c3", title:"Case 3 · Slot Confirmed (by customer)", key:"LEAD_ALLOCATION 1781439434068587 · partner 281749854677691",
  rule:"Customer confirmed the slot (lead CUSTOMER_CONFIRMED, CUSTOMER_CONFIRMED_TIME set), no technician yet → AWAITING_TECHNICIAN_ASSIGNMENT.",
- old:[
-  {t:"TASKS · LEAD_ALLOCATION (1781357443367529)", rows:[["INTEREST_STATUS","CUSTOMER_CONFIRMED"],["PROPOSED_SLOT_TIME","2026-06-14"],["CUSTOMER_CONFIRMED_TIME","2026-06-13T13:00:33"],["ASSIGNEE","(none yet)"],["PARTNER_ID","281749854822481"]]},
-  {t:"BOOKING", rows:[["BOOKING_STATE","SLOT_CONFIRMED_BY_CUSTOMER"],["ACCOUNT_ID","→ customer_id"]]}
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
+  {d:"Service address + lat/lng", src:"BOOKING.ADDRESS, LAT, LNG"},
+  {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account"},
+  {d:"Proposed slot", src:"TASKS.PROPOSED_SLOT_TIME"},
+  {d:"Confirmed slot date/time  ⟵ must-have", src:"TASKS.CUSTOMER_CONFIRMED_TIME, SLOT_TIME"}
  ],
- p:{connState:"PENDING_INSTALL", partnerId:"281749854822481", allocState:"ACCEPTED", candState:"AWAITING_TECHNICIAN_ASSIGNMENT", candNote:"confirmed, no rohit", completedStep:"0", completedStepN:0, confirmedAt:"2026-06-13T13:00:33", slotSource:"CUSTOMER", slotDate:"2026-06-14", hasCustody:false}
+ write:[
+  {t:"connections", cols:[["…","(same as Case 2)","CONST",""],["current_state","PENDING_INSTALL","CASE",""]], nullNote:"unchanged from Case 2"},
+  {t:"alloc", cols:[["…","(same as Case 2)","CONST",""],["allocation_state","ACCEPTED","CASE",""]], nullNote:"unchanged from Case 2"},
+  {t:"cand", cols:[
+    ["current_state","AWAITING_TECHNICIAN_ASSIGNMENT","CASE","customer confirmed, no rohit"],
+    ["confirmed_slot_at","← TASKS.CUSTOMER_CONFIRMED_TIME","OLD","must-have"],
+    ["confirmed_slot_date / slot_date","← TASKS.SLOT_TIME","OLD",""],
+    ["slot_confirmation_source","CUSTOMER","RULE",""],
+    ["+ all Case-2 candidate cols","(carried)","OLD",""]
+  ], nullNote:"completed_step=0; executor, fee, device, otp, speed — null"}
+ ]
 },
 {
- id:"c4", title:"Case 4 · Technician Assigned (on-site, pre-payment)", key:"INSTALLATION 1781357022187226 · customer 281749855087407 (pradeep Kumar)",
- rule:"Technician assigned / on-site, security deposit not yet paid — Selfie/Aadhar collapse here. Representative completed_step=0 → TECHNICIAN_ASSIGNED.",
- old:[
-  {t:"TASKS · INSTALLATION (1781357022187226)", rows:[["STATUS","1 (open)"],["COMPLETED_STEP","0"],["ASSIGNEE","281612415857384 (Rajesh Kumar)"],["ASSIGNED_TIME","2026-06-13T12:56:29"],["SLOT_TIME","2026-06-13"],["PARTNER_ID","281749854803110"]]},
-  {t:"BOOKING (TASK_ID 1781357022187226)", rows:[["ACCOUNT_ID","281749855087407  →  customer_id"],["NAME","pradeep Kumar"],["BOOKING_STATE","ROHIT_ASSIGNED"],["SD_TXN_ID","(null — fee not paid)"],["LAT / LNG","28.6613 / 77.1360"]]}
+ id:"c4", title:"Case 4 · Technician Assigned", key:"INSTALLATION 1781440878098262 · customer (rajni saini)",
+ rule:"Technician assigned / on-site, deposit not yet paid (Selfie/Aadhar collapse here). completed_step=0 → TECHNICIAN_ASSIGNED.",
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
+  {d:"Address + lat/lng", src:"BOOKING.ADDRESS, LAT, LNG"},
+  {d:"Assigned CSP", src:"TASKS.PARTNER_ID → csp_account"},
+  {d:"Confirmed slot", src:"TASKS.SLOT_TIME"},
+  {d:"Technician (rohit)  ⟵ must-have", src:"TASKS.ASSIGNEE → csp_user.legacy_user_id → csp_user.id", hint:"resolve ASSIGNEE → executor_id"},
+  {d:"Self-assigned flag", src:"TASKS.IS_SELF_ASSIGNED"}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855087407", customerName:"pradeep Kumar", partnerId:"281749854803110", assignee:"281612415857384", lat:"28.6613", lng:"77.1360", allocState:"ACCEPTED", candState:"TECHNICIAN_ASSIGNED", candNote:"on-site pre-payment (collapsed)", completedStep:"0", completedStepN:0, slotDate:"2026-06-13", assignedTs:"2026-06-13T12:56:29", feeStatus:"NOT_APPLICABLE", hasCustody:false}
+ write:[
+  {t:"connections", cols:[["current_state","PENDING_INSTALL","CASE",""]], nullNote:"unchanged from Case 2/3"},
+  {t:"alloc", cols:[["allocation_state","ACCEPTED","CASE",""],["assigned_at","← TASKS.ASSIGNED_TIME","OLD",""]], nullNote:"unchanged otherwise"},
+  {t:"cand", cols:[
+    ["current_state","TECHNICIAN_ASSIGNED","CASE",""],
+    ["executor_id","← csp_user.id (ASSIGNEE)","LOOKUP","must-have"],
+    ["is_self_assigned","← TASKS.IS_SELF_ASSIGNED","OLD",""],
+    ["completed_step","0","OLD",""],
+    ["+ all slot cols (carried)","(carried)","OLD",""]
+  ], nullNote:"fee, device, optical, ssid, otp, speed — null"}
+ ]
 },
 {
- id:"c5", title:"Case 5 · Payment Done (deposit paid)", key:"INSTALLATION 1781353222603271 · customer 281749855088198 (Harsh)",
- rule:"₹300 security deposit paid (BOOKING.SD_TXN_ID set) — between Aadhar and Shared. Representative completed_step=3 → INSTALLATION_IN_PROGRESS_POST_FEE, security_fee_status=PAID.",
- old:[
-  {t:"TASKS · INSTALLATION (1781353222603271)", rows:[["STATUS","1"],["COMPLETED_STEP","3 (Shared done)"],["ASSIGNEE","281612415877754 (Dharmender)"],["PARTNER_ID","281749854822881"]]},
-  {t:"BOOKING (TASK_ID 1781353222603271)", rows:[["ACCOUNT_ID","281749855088198  →  customer_id"],["NAME","Harsh"],["BOOKING_STATE","ROHIT_ARRIVED"],["SD_TXN_ID","custGen_9891397955_203588358_1 (PAID)"],["SD_AMOUNT","300"],["LAT / LNG","28.6604 / 77.0606"]]}
+ id:"c5", title:"Case 5 · Payment Done (deposit + ID images)", key:"INSTALLATION 1781438285900607 · customer (Ram Baran)",
+ rule:"₹300 security deposit paid (BOOKING.SD_TXN_ID). The Selfie + Aadhar already captured on-site MUST migrate so the CSP resumes at Payment Done and is NOT asked for them again. completed_step=3 → INSTALLATION_IN_PROGRESS_POST_FEE.",
+ hi:"<b>Carry the captured documents forward.</b> Selfie + Aadhar images are migrated into the new world (step-history + extra_data). When the CSP opens the new app, the task resumes at this step — no re-capture of Selfie / Aadhar.",
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
+  {d:"Address, CSP, slot, technician", src:"(as Cases 2–4)"},
+  {d:"Security deposit txn  ⟵ must-have", src:"BOOKING.SD_TXN_ID, SD_AMOUNT"},
+  {d:"Selfie image (S3 key)  ⟵ must-have", src:"SELFIE child task (object-store key) — copy to new bucket", hint:"child of INSTALLATION, type=SELFIE"},
+  {d:"Aadhar images front+back  ⟵ must-have", src:"BOOKING.AADHAR_FRONT_URL, AADHAR_BACK_URL"}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855088198", customerName:"Harsh", partnerId:"281749854822881", assignee:"281612415877754", lat:"28.6604", lng:"77.0606", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_POST_FEE", candNote:"deposit paid (SD_TXN_ID set)", completedStep:"3", completedStepN:3, feeStatus:"PAID", feeTxn:"custGen_9891397955_203588358_1", steps:["SELFIE","AADHAR","SHARED"], hasCustody:false}
+ write:[
+  {t:"connections", cols:[["current_state","PENDING_INSTALL","CASE",""]], nullNote:"unchanged"},
+  {t:"alloc", cols:[["allocation_state","ACCEPTED","CASE",""]], nullNote:"unchanged"},
+  {t:"cand", cols:[
+    ["current_state","INSTALLATION_IN_PROGRESS_POST_FEE","CASE",""],
+    ["completed_step","3","OLD",""],
+    ["security_fee_status","PAID","RULE","SD_TXN_ID present"],
+    ["security_fee_transaction_id","← BOOKING.SD_TXN_ID","OLD","must-have"],
+    ["extra_data.aadhar_front / aadhar_back","← BOOKING.AADHAR_*_URL","OLD","ID images carried"],
+    ["+ all slot / executor cols (carried)","(carried)","OLD",""]
+  ], nullNote:"device, optical, ssid, otp, speed — null"},
+  {t:"stephist", cols:[
+    ["row · SELFIE","result_code=PASS, payload.image_url ← selfie S3 key","OLD","so Selfie shows done"],
+    ["row · AADHAR","result_code=PASS","OLD","so Aadhar shows done"],
+    ["row · SHARED","result_code=PASS","OLD",""],
+    ["connection_id / actor_id","(=minted) / executor_id","MINT/LOOKUP",""]
+  ], nullNote:"submitted_at ← child ts (fallback parent CREATED)"}
+ ]
 },
 {
  id:"c6", title:"Case 6 · Device ID linked (CONNECTION_INFO)", key:"INSTALLATION 1781335322392052 · customer 281749855088053 (sumit)",
- rule:"Device scanned + linked at CONNECTION_INFO (step 4); network/optical captured. completed_step=4 → INSTALLATION_IN_PROGRESS_POST_FEE with device_id populated.",
- old:[
-  {t:"TASKS · INSTALLATION (1781335322392052)", rows:[["STATUS","1"],["COMPLETED_STEP","4 (CONNECTION_INFO done)"],["ASSIGNEE","281612415879954 (Gulshan)"],["PARTNER_ID","281749854824813"],["EXTRA_DATA.deviceId","GX153715"],["EXTRA_DATA.opticalPower","-20.97"],["EXTRA_DATA.ssid","sumit_7816"]]},
-  {t:"BOOKING (TASK_ID 1781335322392052)", rows:[["ACCOUNT_ID","281749855088053  →  customer_id"],["NAME","sumit"],["SD_TXN_ID","custGen_9354077816_203507326_1 (PAID)"],["AADHAR_FRONT_URL","9354077816/AADHAR_FRONT"],["LAT / LNG","28.5380 / 77.2306"]]}
+ rule:"Device scanned + linked at CONNECTION_INFO (step 4); network + optical captured. completed_step=4 → INSTALLATION_IN_PROGRESS_POST_FEE with device populated.",
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
+  {d:"Address, CSP, slot, technician, fee, ID images", src:"(as Cases 2–5)"},
+  {d:"Device id (router)  ⟵ must-have", src:"INSTALLATION.EXTRA_DATA.deviceId"},
+  {d:"Optical power  ⟵ must-have", src:"INSTALLATION.EXTRA_DATA.opticalPower"},
+  {d:"Network type / PPPoE + SSID", src:"CONNECTION_INFO child / EXTRA_DATA.ssid"}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855088053", customerName:"sumit", partnerId:"281749854824813", assignee:"281612415879954", lat:"28.5380", lng:"77.2306", address:"{home:551 B, locality:Chirag Dilli 110017, city:New Delhi}::jsonb", allocState:"ACCEPTED", candState:"INSTALLATION_IN_PROGRESS_POST_FEE", candNote:"device linked at CONNECTION_INFO", completedStep:"4", completedStepN:4, feeStatus:"PAID", feeTxn:"custGen_9354077816_203507326_1", deviceId:"GX153715", ssid:"sumit_7816", optical:"-20.97", extraData:"{aadhar_front:9354077816/AADHAR_FRONT, aadhar_back:9354077816/AADHAR_BACK}", confirmedAt:"2026-06-13T06:48:19Z", slotSource:"CUSTOMER", slotDate:"2026-06-14", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO"], hasCustody:false}
+ write:[
+  {t:"connections", cols:[["current_state","PENDING_INSTALL","CASE",""]], nullNote:"unchanged"},
+  {t:"alloc", cols:[["allocation_state","ACCEPTED","CASE",""]], nullNote:"unchanged"},
+  {t:"cand", cols:[
+    ["current_state","INSTALLATION_IN_PROGRESS_POST_FEE","CASE",""],
+    ["completed_step","4","OLD",""],
+    ["device_id","← EXTRA_DATA.deviceId (GX153715)","OLD","must-have"],
+    ["ssid","← EXTRA_DATA.ssid (sumit_7816)","OLD",""],
+    ["optical_power_dbm / optical_power_source","← EXTRA_DATA.opticalPower (-20.97) / CONNECTION_INFO","OLD",""],
+    ["network_type / pppoe_*","← CONNECTION_INFO payload","OLD",""],
+    ["+ all fee / image / slot cols (carried)","(carried)","OLD",""]
+  ], nullNote:"measured_download, otp — null"},
+  {t:"stephist", cols:[
+    ["+ row · CONNECTION_INFO","result_code=PASS","OLD","device step done"],
+    ["(SELFIE / AADHAR / SHARED carried)","PASS","OLD",""]
+  ], nullNote:"—"}
+ ]
 },
 {
  id:"c7", title:"Case 7 · Speed Test (awaiting OTP)", key:"INSTALLATION 1781350265664490 · customer 281749855088200 (rani)",
  rule:"Speed test submitted (completed_step=6); customer OTP next → AWAITING_CUSTOMER_OTP. (OTP step 7 closes the old task → out of scope.)",
- old:[
-  {t:"TASKS · INSTALLATION (1781350265664490)", rows:[["STATUS","1"],["COMPLETED_STEP","6 (SPEED_TEST done)"],["ASSIGNEE","137438996037 (RKCABLE)"],["PARTNER_ID","274877928231"]]},
-  {t:"BOOKING (TASK_ID 1781350265664490)", rows:[["ACCOUNT_ID","281749855088200  →  customer_id"],["NAME","rani"],["SD_TXN_ID","custGen_6367244420_203513526_0 (PAID)"],["AADHAR_FRONT_URL","6367244420/AADHAR_FRONT"],["LAT / LNG","28.5966 / 77.0769"]]}
+ need:[
+  {d:"Customer account", src:"BOOKING.ACCOUNT_ID"},
+  {d:"Everything from Cases 2–6", src:"(slot, tech, fee, ID images, device, optical, network)"},
+  {d:"Speed test reading  ⟵ must-have", src:"INSTALLATION.EXTRA_DATA / SPEED_TEST child (measuredDownloadMbps)"}
  ],
- p:{connState:"PENDING_INSTALL", customerId:"281749855088200", customerName:"rani", partnerId:"274877928231", assignee:"137438996037", lat:"28.5966", lng:"77.0769", allocState:"ACCEPTED", candState:"AWAITING_CUSTOMER_OTP", candNote:"speed test done; OTP next", completedStep:"6", completedStepN:6, otp:"false", feeStatus:"PAID", feeTxn:"custGen_6367244420_203513526_0", deviceId:"← BOOKING.DEVICE_ID", ssid:"← BOOKING.SSID", optical:"(CONNECTION_INFO)", download:"(SPEED_TEST reading)", extraData:"{aadhar_front ← 6367244420/AADHAR_FRONT}", slotDate:"2026-06-13", steps:["SELFIE","AADHAR","SHARED","CONNECTION_INFO","DEVICE_PHOTO","SPEED_TEST"], hasCustody:false}
+ write:[
+  {t:"connections", cols:[["current_state","PENDING_INSTALL","CASE",""]], nullNote:"unchanged"},
+  {t:"alloc", cols:[["allocation_state","ACCEPTED","CASE",""]], nullNote:"unchanged"},
+  {t:"cand", cols:[
+    ["current_state","AWAITING_CUSTOMER_OTP","CASE","OTP next"],
+    ["completed_step","6","OLD",""],
+    ["measured_download_mbps","← EXTRA_DATA (SPEED_TEST reading)","OLD","must-have"],
+    ["otp_verified","false","OLD","OTP not yet done"],
+    ["+ all device / fee / image / slot cols (carried)","(carried)","OLD",""]
+  ], nullNote:"customer_rating, installation_completed_at — null"},
+  {t:"stephist", cols:[
+    ["+ rows · DEVICE_PHOTO, SPEED_TEST","result_code=PASS","OLD",""],
+    ["(SELFIE … CONNECTION_INFO carried)","PASS","OLD","6 step rows total"]
+  ], nullNote:"—"}
+ ]
 }
 ];
 
 // ===================== render =====================
-function oldCard(c){
-  if(c.absent) return `<div class="card absent"><h3>${esc(c.t)}</h3>${c.note?`<div class="cnote">${esc(c.note)}</div>`:''}<div class="why">${esc(c.absent)}</div></div>`;
-  const rows=c.rows.map(r=>`<tr><td class="f">${esc(r[0])}</td><td class="v" colspan="2">${esc(r[1])}</td></tr>`).join("");
-  return `<div class="card"><h3>${esc(c.t)}</h3>${c.note?`<div class="cnote">${esc(c.note)}</div>`:''}<table>${rows}</table></div>`;
+function needCard(needList){
+  const head=`<tr><td class="f" style="font-weight:800;color:#16243a">Datapoint (must have)</td><td class="v" style="font-weight:800;color:#16243a">Source — table.column</td><td class="s" style="font-weight:800;color:#16243a">SQL hint</td></tr>`;
+  const rows=needList.map(n=>`<tr><td class="f">${esc(n.d)}</td><td class="v">${esc(n.src)}</td><td class="s">${esc(n.hint||"")}</td></tr>`).join("");
+  return `<div class="card"><h3>Required data to migrate <span class="svc">— must be present in the old row</span></h3><table>${head}${rows}</table></div>`;
 }
-function newCard(key,data){
-  const m=NEWMETA[key];
-  if(!data) return `<div class="card absent"><h3>${m.label} <span class="svc">— ${m.svc}</span></h3><div class="why">${esc(ABSENT_WHY[key]||"No row in this case")}</div></div>`;
-  const rows=data.map(r=>`<tr class="t-${r[2]}"><td class="f">${esc(r[0])}</td><td class="v">${esc(r[1])}</td><td class="s"><span class="chip ${r[2]}">${r[2]}</span> ${esc(r[3]||"")}</td></tr>`).join("");
-  return `<div class="card"><h3>${m.label} <span class="svc">— ${m.svc}</span></h3><table>${rows}</table></div>`;
+function writeCard(w){
+  const m=NEWMETA[w.t]||{label:w.t,svc:""};
+  if(!w.cols||!w.cols.length) return `<div class="card absent"><h3>${m.label} <span class="svc">— ${m.svc}</span></h3><div class="why">${esc(w.nullNote||"not written in this case")}</div></div>`;
+  const rows=w.cols.map(c=>`<tr class="t-${c[2]||'OLD'}"><td class="f">${esc(c[0])}</td><td class="v">${esc(c[1])}</td><td class="s"><span class="chip ${c[2]||'OLD'}">${c[2]||'OLD'}</span> ${esc(c[3]||"")}</td></tr>`).join("");
+  const note=w.nullNote?`<div class="cnote" style="color:#777">Other columns — ${esc(w.nullNote)}</div>`:"";
+  return `<div class="card"><h3>${m.label} <span class="svc">— ${m.svc}</span> <span style="float:right;font-size:9.5px;background:#5b2d91;color:#fff;padding:1px 8px;border-radius:9px">columns to fill</span></h3><table>${rows}</table>${note}</div>`;
 }
 const tabsEl=document.getElementById("tabs"), subTabsEl=document.getElementById("subtabs"), panesEl=document.getElementById("panes");
 const RIGHT=["connections","alloc","cand","stephist","translog"];
@@ -319,231 +438,15 @@ const RIGHT=["connections","alloc","cand","stephist","translog"];
    <div class="warn" style="margin-top:14px"><b>SD_TXN_ID is the AUTHORITATIVE fee gate</b> — POST_FEE/OTP/RATING require it set; null on-site → FEE_COLLECTION_PENDING regardless of step. On-site precedence: <code>step≤1 → ARRIVED/PRE_FEE · else SD null → FEE_COLLECTION_PENDING · else by step (3–5 POST_FEE, 6 OTP, 7 RATING)</code>. <b>Custody:</b> the device is <code>CUSTODIED</code> with the CSP throughout the install; it becomes <code>DEPLOYED</code> only at <code>CONNECTION_ACTIVE</code> (CustomerInstallationSignal) — so the in-flight migration does <b>not</b> write netbox_custody. <b>Identity:</b> customer_id ← BOOKING.ACCOUNT_ID; single D&amp;A-assigned CSP only (LATE_INTERESTED dropped); plan_id = 22 (const).</div>`;
   panesEl.appendChild(pane);
 })();
-// ---- exhaustive full-schema row builders: fill every column from per-case params ----
-function dv(v,d){return (v===undefined||v===null)?d:v;}
-function cspRow(p){return p.cspId?[p.cspId,"LOOKUP","csp_account by partner_id "+dv(p.partnerId,"?")]:["⚠ no csp_account row yet","LOOKUP","csp_account.csp_id WHERE partner_id="+dv(p.partnerId,"?")+" (P1)"];}
-function custRow(p){return p.customerId?[p.customerId,"OLD","BOOKING.ACCOUNT_ID (join BOOKING.TASK_ID)"]:["⚠ resolve via BOOKING","LOOKUP","BOOKING.ACCOUNT_ID via booking-root TASK_ID"];}
-function connRows(p){var c=cspRow(p),cu=custRow(p);return [
- ["connection_id","(new UUID)","MINT","minted at INSERT — spine for all joins"],
- ["customer_id",cu[0],cu[1],cu[2]],
- ["csp_id",c[0],c[1],c[2]],
- ["zone_id",dv(p.zone,"(resolved)"),"API","CC /zones/resolve("+dv(p.lat,"lat")+","+dv(p.lng,"lng")+") point-in-polygon (P3)"+(p.zoneWarn?" ⚠ "+p.zoneWarn:"")],
- ["service_address",dv(p.address,"{line1,pincode,city,lat,lng}::jsonb"),"OLD","BOOKING.ADDRESS + LAT/LNG"],
- ["plan_id","22","CONST","hardcoded for all installs"],
- ["current_state",p.connState,"CASE",dv(p.connStateNote,"")],
- ["state_timestamp",dv(p.modified,"(migration ts)"),"OLD","TASKS.MODIFIED"],
- ["pause_reason","NULL","NULL","not paused"],
- ["pause_count","0","CONST","default"],
- ["p76_timer_start","NULL","NULL","not pending-deactivation"],
- ["retry_count",dv(p.retry,"0"),"OLD","reschedule count"],
- ["retry_exhausted","false","CONST","default"],
- ["installation_complete_at","NULL","CASE","set only at activation (out of scope)"],
- ["activated_at","NULL","CASE","set only at activation"],
- ["deactivated_at","NULL","NULL",""],
- ["total_active_duration","0","CONST","default"],
- ["total_pause_duration","0","CONST","default"],
- ["version","1","CONST","default"],
- ["correlation_id","csp-migration-<batch>","MINT","audit"],
- ["causation_id","csp-migration-<batch>","MINT","audit"],
- ["created_at",dv(p.created,"(migration ts)"),"OLD","TASKS.CREATED"],
- ["updated_at",dv(p.modified,"(migration ts)"),"OLD","TASKS.MODIFIED"],
- ["deactivation_reason","NULL","NULL",""],
- ["prior_caeo_state","NULL","NULL",""],
- ["latest_recharge_window_end","NULL","NULL","recharge-domain; N/A in-flight"]
-];}
-function allocRows(p){var c=cspRow(p);return [
- ["id","(new UUID)","MINT","allocation PK (≠ candidate.allocation_id)"],
- ["connection_id","(same minted UUID)","MINT",""],
- ["csp_id",c[0],c[1],c[2]],
- ["zone_id","(= connection's zone)","API","propagates 1:1 from connection"],
- ["allocation_state",p.allocState,"CASE",dv(p.allocNote,"")],
- ["allocation_event_type",dv(p.allocEvent,"NEW_DEMAND"),"RULE","direct D&A assignment (single CSP)"],
- ["trigger_source","NULL","NULL",""],
- ["reassignment_reason","NULL","NULL","single attempt"],
- ["previous_csp_id","NULL","OLD","no reroute"],
- ["retry_count","0","OLD",""],
- ["decline_cooldown_csp_ids","[]","CONST","no declines"],
- ["assignment_count_per_csp","{csp:1}","RULE","single assigned CSP"],
- ["parallel_install_warning","false","CONST","default"],
- ["acceptance_timestamp",dv(p.acceptanceTs,"(notif-to-partner ts)"),"OLD","LEAD_ALLOCATION notif time (NOT customer-confirm)"],
- ["assigned_at",dv(p.assignedTs,"(assignment ts)"),"OLD","TASKS.ASSIGNED_TIME"],
- ["reallocation_pending_at","NULL","NULL",""],
- ["existing_csp_id","NULL","NULL",""],
- ["exit_risk_level","NULL","NULL",""],
- ["version","1","CONST","default"],
- ["created_at",dv(p.created,"(ts)"),"OLD","LEAD_ALLOCATION.CREATED"],
- ["updated_at",dv(p.modified,"(ts)"),"OLD","LEAD_ALLOCATION.MODIFIED"],
- ["correlation_id","csp-migration-<batch>","MINT",""],
- ["causation_id","csp-migration-<batch>","MINT",""],
- ["deactivation_initiated_at","NULL","NULL",""],
- ["released_at","NULL","NULL",""],
- ["candidate_csps",dv(p.candidateCsps,"[single assigned csp]"),"OLD","single assigned CSP (no LATE_INTERESTED also-rans)"],
- ["candidate_csps_with_radius",dv(p.radiusObj,"{csp:dist}"),"OLD","NEAREST_DISTANCE / PARTNER_LAT_LNG"]
-];}
-function candRows(p){
- var c=cspRow(p); var sN=dv(p.completedStepN,0);
- var exec = p.executorId?[p.executorId,"LOOKUP","ASSIGNEE "+dv(p.assignee,"")+" → csp_user.legacy_user_id → id (P2)"]:(p.noExecutor?["(none yet)","CONST","no ASSIGNEE — technician not assigned"]:["⚠ executor not onboarded","LOOKUP","ASSIGNEE "+dv(p.assignee,"")+" → csp_user (P2)"]);
- var fee=dv(p.feeStatus,"NOT_APPLICABLE");
- return [
- ["execution_candidate_id","(new UUID)","MINT","one per install attempt"],
- ["authority_entity_id","(new UUID)","MINT","D&A allocation event id"],
- ["allocation_id","(new UUID)","MINT","NOT the alloc PK"],
- ["csp_id",c[0],c[1],c[2]],
- ["candidate_type","PRE_INSTALL","CONST","fixed"],
- ["task_family","INSTALL","CONST","fixed"],
- ["aggregation_type","INDIVIDUAL","CONST","fixed"],
- ["current_state",p.candState,"CASE",dv(p.candNote,"")],
- ["task_status",dv(p.taskStatus,"OPEN"),"CASE","TASKS.STATUS=1"],
- ["state_version","0","CONST","default"],
- ["reason_code",dv(p.reasonCode,"ALLOCATION_ACCEPTED"),"RULE","per state"],
- ["reason_display_template",dv(p.reasonTpl,"task.install.<state>"),"CONST","per state"],
- ["deadline_at",dv(p.deadline,"(from slot / TAT)"),"RULE","SLOT_TIME / installation_tat_time"],
- ["tat_date",dv(p.tatDate,"(slot date)"),"OLD","SLOT_TIME date"],
- ["object_id","(same minted UUID)","MINT","= connection_id"],
- ["connection_id","(same minted UUID)","MINT",""],
- ["zone_id",dv(p.zone,"(resolved)"),"API","CC resolve (P3)"],
- ["subzone_id","NULL","TBD",""],
- ["locality",dv(p.zone,"(resolved)"),"API","CC"],
- ["service_address",dv(p.address,"{...}"),"OLD","BOOKING.ADDRESS"],
- ["customer_name",dv(p.customerName,"⚠ via BOOKING.NAME"),"OLD","BOOKING.NAME"],
- ["batch_key","NULL","CONST","INDIVIDUAL"],
- ["incident_key","NULL","CONST","INDIVIDUAL"],
- ["is_csp_actionable","true","RULE","per state"],
- ["threshold_state","NORMAL","RULE","deadline vs now"],
- ["latest_attention_at","(migration ts)","RULE","seed one STATE_CHANGE attention"],
- ["latest_attention_version","1","CONST","default"],
- ["latest_attention_type","STATE_CHANGE","CONST","seed"],
- ["latest_attention_reason",dv(p.attnReason,"Migrated: "+p.candState),"CONST","seed"],
- ["acked_attention_version","0","CONST","default"],
- ["proposed_slot_date",dv(p.proposedDate,"NULL"),(p.proposedDate?"OLD":"NULL"),(p.proposedDate?"PROPOSED_SLOT_TIME":"slot not proposed yet")],
- ["proposed_slot_time_range_start",dv(p.slotStart,"NULL"),(p.slotStart?"LOOKUP":"NULL"),"slot config"],
- ["proposed_slot_time_range_end",dv(p.slotEnd,"NULL"),(p.slotEnd?"LOOKUP":"NULL"),"slot config"],
- ["confirmed_slot_number",dv(p.slotNumber,"NULL"),(p.slotNumber?"OLD":"NULL"),"SLOT_ID"],
- ["confirmed_slot_at",dv(p.confirmedAt,"NULL"),(p.confirmedAt?"OLD":"NULL"),(p.confirmedAt?"CUSTOMER_CONFIRMED_TIME":"not confirmed")],
- ["slot_confirmation_source",dv(p.slotSource,"NULL"),(p.slotSource?"RULE":"NULL"),(p.slotSource?"CUSTOMER_CONFIRMED_TIME present":"")],
- ["slot_date",dv(p.slotDate,"NULL"),(p.slotDate?"OLD":"NULL"),"SLOT_TIME"],
- ["executor_id",exec[0],exec[1],exec[2]],
- ["executor_name","NULL","CONST","resolved at read-time"],
- ["is_self_assigned",dv(p.selfAssigned,"false"),"OLD","IS_SELF_ASSIGNED"],
- ["call_attempts_count",dv(p.calls,"0"),"OLD","IS_CALLED + call logs"],
- ["last_call_at","NULL","TBD","call logs"],
- ["last_call_telephony_status","NULL","TBD",""],
- ["dismissed_at","NULL","CONST","pre-A02 deprecated"],
- ["dismiss_count","0","CONST","pre-A02 deprecated"],
- ["declined_reason","NULL","CONST","pre-A02 deprecated"],
- ["failure_reason","NULL","CASE","terminal-only"],
- ["failure_reported_at","NULL","CASE","terminal-only"],
- ["completed_step",dv(p.completedStep,"0"),"OLD","TASKS.COMPLETED_STEP"],
- ["otp_verified",dv(p.otp,"false"),"OLD","child OTP_VERIFIED task"],
- ["otp_attempts_current_issuance","0","CONST","default"],
- ["security_fee_status",fee,"RULE","SD_TXN_ID is AUTHORITATIVE: set → PAID (state may be POST_FEE/OTP/RATING); null while on-site → PENDING → FEE_COLLECTION_PENDING regardless of step; pre-arrival → NOT_APPLICABLE"],
- ["security_fee_paid_at",(fee==="PAID"?dv(p.feePaidAt,"(SD pay ts)"):"NULL"),(fee==="PAID"?"OLD":"NULL"),"BOOKING SD"],
- ["security_fee_transaction_id",(fee==="PAID"?dv(p.feeTxn,"← BOOKING.SD_TXN_ID"):"NULL"),(fee==="PAID"?"OLD":"NULL"),"BOOKING.SD_TXN_ID"],
- ["network_type",dv(p.networkType,"NULL"),(p.networkType?"OLD":(sN>=4?"TBD":"NULL")),(sN>=4?"CONNECTION_INFO payload":"not captured yet")],
- ["pppoe_username",dv(p.pppoe,"NULL"),(p.pppoe?"OLD":(sN>=4?"TBD":"NULL")),"CONNECTION_INFO"],
- ["pppoe_password","NULL",(sN>=4?"TBD":"NULL"),"CONNECTION_INFO (encrypted)"],
- ["pppoe_service_name","NULL",(sN>=4?"TBD":"NULL"),""],
- ["static_ip","NULL","NULL","not static"],
- ["subnet_mask","NULL","NULL",""],
- ["gateway","NULL","NULL",""],
- ["dns_primary","NULL","NULL",""],
- ["dns_secondary","NULL","NULL",""],
- ["vlan","NULL","NULL",""],
- ["device_id",dv(p.deviceId,"NULL"),(p.deviceId?"OLD":"NULL"),(p.deviceId?"BOOKING.DEVICE_ID / EXTRA_DATA":"not captured (pre-CONNECTION_INFO)")],
- ["router_mac","NULL",(sN>=5?"TBD":"NULL"),(sN>=5?"DEVICE_PHOTO":"DEVICE_PHOTO not done")],
- ["ssid",dv(p.ssid,"NULL"),(p.ssid?"OLD":"NULL"),"BOOKING.SSID / EXTRA_DATA"],
- ["optical_power_dbm",dv(p.optical,"NULL"),(p.optical?"OLD":"NULL"),"EXTRA_DATA.opticalPower (CONNECTION_INFO)"],
- ["optical_power_source",(p.optical?"CONNECTION_INFO":"NULL"),(p.optical?"RULE":"NULL"),"step 4"],
- ["customer_rating",dv(p.rating,"NULL"),(p.rating?"OLD":"NULL"),"child RATING task"],
- ["incentive_eligible","NULL","CASE","evaluated at activation"],
- ["incentive_ineligibility_reason","NULL","CASE",""],
- ["installation_completed_at","NULL","CASE","activation only"],
- ["removal_reason","NULL","CASE","terminal-only"],
- ["extra_data",dv(p.extraData,"{photos S3 keys, step payloads}"),"OLD","BOOKING.AADHAR_*_URL + EXTRA_DATA"],
- ["idempotency_key","csp-migration-<batch>","MINT",""],
- ["correlation_id","csp-migration-<batch>","MINT",""],
- ["created_at",dv(p.created,"(ts)"),"OLD","TASKS.CREATED"],
- ["updated_at",dv(p.modified,"(ts)"),"OLD","TASKS.MODIFIED"],
- ["pre_paid_bypass_applied","false","CONST","default"],
- ["confirmed_slot_date",dv(p.slotDate,"NULL"),(p.slotDate?"OLD":"NULL"),"SLOT_TIME"],
- ["confirmed_slot_time_range_start",dv(p.slotStart,"NULL"),(p.slotStart?"LOOKUP":"NULL"),"slot config"],
- ["confirmed_slot_time_range_end",dv(p.slotEnd,"NULL"),(p.slotEnd?"LOOKUP":"NULL"),"slot config"],
- ["measured_download_mbps",dv(p.download,"NULL"),(p.download?"OLD":"NULL"),(sN>=6?"SPEED_TEST":"SPEED_TEST not done")],
- ["radius",dv(p.radius,"NULL"),(p.radius?"OLD":"NULL"),"TASKS.NEAREST_DISTANCE"],
- ["failure_subreason_code","NULL","CASE","terminal-only"],
- ["failure_subreason_source","NULL","CASE",""],
- ["failure_subreason_confidence","NULL","CASE",""],
- ["failure_detail","NULL","CASE",""],
- ["p74_deadline_at","(acceptance + P74)","RULE","acceptance_timestamp + window"]
-];}
-function custodyRows(p){var c=cspRow(p);return [
- ["device_id",dv(p.deviceId,"← BOOKING.DEVICE_ID"),"OLD","BOOKING.DEVICE_ID / EXTRA_DATA"],
- ["csp_id",c[0],c[1],c[2]],
- ["status","DEPLOYED","CASE","CUSTODIED→DEPLOYED on DEVICE_BOUND_TO_CONNECTION"],
- ["idle_start_date","NULL","NULL","deployed"],
- ["idle_days","0","CONST","default"],
- ["carry_fee_accrual_units","0","CONST","default"],
- ["carry_fee_active","false","CONST","default"],
- ["retrieval_start_date","NULL","NULL",""],
- ["condition_classification","NULL","NULL",""],
- ["condition_detail","NULL","NULL",""],
- ["total_liability","NULL","NULL",""],
- ["connection_deactivated","false","CONST","default"],
- ["version","1","CONST","default"],
- ["correlation_id","csp-migration-<batch>","MINT",""],
- ["causation_id","csp-migration-<batch>","MINT",""],
- ["created_at",dv(p.created,"(bind ts)"),"OLD","bind ts"],
- ["updated_at",dv(p.modified,"(ts)"),"OLD",""],
- ["customer_id",dv(p.customerId,"← BOOKING.ACCOUNT_ID"),"OLD","BOOKING.ACCOUNT_ID"],
- ["connection_id","(same minted UUID)","MINT",""],
- ["current_connection_id","(same minted UUID)","MINT",""],
- ["last_connection_id","NULL","NULL",""],
- ["recovery_pending_since","NULL","NULL",""],
- ["recovery_method","NULL","NULL",""],
- ["lost_reason","NULL","NULL",""],
- ["retrieval_reason","NULL","NULL",""],
- ["csp_never_had_custody","false","CONST","default"],
- ["was_ever_deployed","true","RULE","device bound"],
- ["device_commissioned_at",dv(p.created,"(bind ts)"),"OLD","bind ts"],
- ["dispatched_at","NULL","TBD",""],
- ["last_accrual_date","NULL","NULL",""]
-];}
-function stephistRows(p){
- if(!p.steps||!p.steps.length) return null;
- var r=p.steps.map(function(s,i){return ["(row "+(i+1)+") step_id="+s,"result_code=PASS","OLD","child "+s+" task (STATUS=2)"+(s==="SELFIE"?"; payload.image_url ← old selfie key (TBD)":"")];});
- r.push(["connection_id (all rows)","(same minted UUID)","MINT",""]);
- r.push(["actor_id (all rows)",p.executorId?p.executorId:"⚠ executor not onboarded","LOOKUP","ASSIGNEE → csp_user (P2)"]);
- r.push(["submitted_at","child RSLVD → fallback CREATED","OLD","child RSLVD_DATETIME mostly sentinel 0000-12-30"]);
- return r;
-}
-function translogRows(p){return [
- ["id / execution_candidate_id","(minted)","MINT",""],
- ["from_state","NULL","CONST","initial"],
- ["to_state",p.candState,"CASE","seed resting state"],
- ["reason_code","MIGRATION","CONST","synthetic"],
- ["actor_type","OS_SIGNAL","CONST","synthetic"],
- ["actor_id","migration-batch","CONST","synthetic"],
- ["completed_step",dv(p.completedStep,"0"),"OLD","TASKS.COMPLETED_STEP"],
- ["occurred_at","(migration ts)","CONST","one MIGRATED row — full history not reconstructable"]
-];}
-function buildNeu(p){return {
- connections:connRows(p),
- alloc:allocRows(p),
- cand:(p.hasCand===false)?null:candRows(p),
- stephist:stephistRows(p),
- translog:(p.hasCand===false)?null:translogRows(p),
- custody:p.hasCustody?custodyRows(p):null
-};}
 function buildCasePane(cs){
-  const neu = cs.neu || buildNeu(cs.p);
   const pane=document.createElement("div");pane.className="casepane";pane.id=`pane_wx_${cs.id}`;
   pane.innerHTML=`
     <div class="banner"><b>${cs.title}</b> &nbsp;·&nbsp; <code>${cs.key}</code><div class="rule">${cs.rule}</div></div>
     ${cs.hi?`<div class="hilite">${cs.hi}</div>`:""}
     ${cs.warn?`<div class="warn">${cs.warn}</div>`:""}
     <div class="cols">
-      <div><div class="side-title">OLD WORLD — source rows (DynamoDB TASKS + BOOKING)</div>${cs.old.map(oldCard).join("")}</div>
-      <div><div class="side-title newW">NEW WORLD — post-migration rows (CSP-OS)</div>${RIGHT.map(k=>newCard(k,neu[k])).join("")}</div>
+      <div><div class="side-title">OLD WORLD — source rows (DynamoDB TASKS + BOOKING)</div>${needCard(cs.need)}</div>
+      <div><div class="side-title newW">NEW WORLD — post-migration rows (CSP-OS)</div>${cs.write.map(writeCard).join("")}</div>
     </div>`;
   panesEl.appendChild(pane);
 }
